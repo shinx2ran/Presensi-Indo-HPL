@@ -17,11 +17,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -29,7 +26,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -37,11 +33,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -57,19 +51,12 @@ import com.indohpl.presensi.ui.PhotoDialog
 import com.indohpl.presensi.ui.StatusPill
 import com.indohpl.presensi.ui.shortLabel
 import com.indohpl.presensi.ui.theme.Green
-import com.indohpl.presensi.util.Export
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.time.YearMonth
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RecapScreen(repository: Repository, onMessage: (String) -> Unit) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+fun RecapScreen(repository: Repository) {
     var month by remember { mutableStateOf(YearMonth.now()) }
     val today = LocalDate.now()
 
@@ -91,29 +78,6 @@ fun RecapScreen(repository: Repository, onMessage: (String) -> Unit) {
     }
     val isCurrentMonth = month == YearMonth.from(today)
     var photoToShow by remember { mutableStateOf<Pair<String, String>?>(null) }
-
-    fun buildMarkdown(): String = RecapFormatter.markdown(
-        ym = month,
-        recaps = recaps,
-        records = records,
-        employees = employees,
-        config = settings.bonusConfig(),
-        rulesText = settings.rulesText(),
-        generatedAt = LocalDateTime.now().format(RecapFormatter.DATE_TIME_FMT),
-    )
-
-    fun shareCsv() {
-        scope.launch {
-            val files = withContext(Dispatchers.IO) {
-                listOf(
-                    Export.writeText(context, "presensi_${month}_detail.csv", RecapFormatter.detailCsv(month, employees, records)),
-                    Export.writeText(context, "presensi_${month}_rekap.csv", RecapFormatter.summaryCsv(month, recaps)),
-                    Export.writeText(context, "presensi_${month}_rekap.md", buildMarkdown()),
-                )
-            }
-            Export.shareFiles(context, files, "text/*", "Rekap presensi ${RecapFormatter.monthLabel(month)}")
-        }
-    }
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("Rekap Bulanan") }) },
@@ -174,29 +138,8 @@ fun RecapScreen(repository: Repository, onMessage: (String) -> Unit) {
             }
             item {
                 Spacer(Modifier.height(8.dp))
-                Text("Ekspor untuk rekapan (Claude / Excel)", fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { shareCsv() }, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.Share, null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Bagikan file")
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            Export.copyToClipboard(context, "Rekap presensi", buildMarkdown())
-                            onMessage("Rekap disalin. Tempel ke Claude.")
-                        },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Icon(Icons.Filled.ContentCopy, null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Salin teks")
-                    }
-                }
-                Spacer(Modifier.height(4.dp))
                 Text(
-                    "\"Bagikan file\" mengirim 3 file: detail harian (CSV), rekap per karyawan (CSV), dan rekap teks (Markdown). Pilih aplikasi Claude di menu bagikan, atau simpan ke Drive.",
+                    "Ketuk nama untuk melihat detail harian. Ekspor rekap ada di Pengaturan (khusus owner).",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

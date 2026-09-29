@@ -65,6 +65,17 @@ private val dayLabels = mapOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(repository: Repository, onMessage: (String) -> Unit) {
+    Scaffold(topBar = { TopAppBar(title = { Text("Pengaturan (owner)") }) }) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            OwnerGate(repository) {
+                SettingsContent(repository, onMessage)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val saved by repository.settingsStore.settings.collectAsStateWithLifecycle(null)
@@ -162,11 +173,18 @@ fun SettingsScreen(repository: Repository, onMessage: (String) -> Unit) {
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("Pengaturan") }) }) { padding ->
+    var newPin1 by remember { mutableStateOf("") }
+    var newPin2 by remember { mutableStateOf("") }
+
+    run {
         Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            ExportPanel(repository, onMessage)
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
             Text("Aturan jam masuk", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
                 "Datang lewat dari jam masuk + toleransi = telat. Menit telat dihitung dari jam masuk.",
@@ -320,11 +338,43 @@ fun SettingsScreen(repository: Repository, onMessage: (String) -> Unit) {
             }
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            Text("Ganti PIN owner", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = newPin1, onValueChange = { newPin1 = it.filter(Char::isDigit).take(8) },
+                    label = { Text("PIN baru") }, singleLine = true, modifier = Modifier.weight(1f),
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                )
+                OutlinedTextField(
+                    value = newPin2, onValueChange = { newPin2 = it.filter(Char::isDigit).take(8) },
+                    label = { Text("Ulangi") }, singleLine = true, modifier = Modifier.weight(1f),
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                )
+            }
+            OutlinedButton(
+                onClick = {
+                    when {
+                        newPin1.length < 4 -> onMessage("PIN minimal 4 angka")
+                        newPin1 != newPin2 -> onMessage("PIN tidak sama")
+                        else -> scope.launch {
+                            repository.settingsStore.setOwnerPin(newPin1)
+                            newPin1 = ""; newPin2 = ""
+                            onMessage("PIN owner diganti")
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Simpan PIN baru") }
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
             Text("Catatan penting", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
                 "• Biometrik memakai sidik jari/wajah/PIN yang terdaftar di HP kasir ini. Android tidak memberi tahu aplikasi sidik jari siapa yang dipakai, jadi bukti identitas utama adalah selfie berstempel waktu.\n" +
                     "• Waktu diambil dari jam HP kasir. Pastikan jam HP otomatis (dari jaringan).\n" +
                     "• Koordinat GPS dibakar ke foto. Aplikasi fake GPS terdeteksi dan ditolak.\n" +
+                    "• PIN owner yang lupa hanya bisa direset dengan menghapus data aplikasi (semua presensi ikut hilang), jadi ekspor dulu.\n" +
                     "• Foto tersimpan di dalam aplikasi (folder privat). Menghapus aplikasi = menghapus semua data. Ekspor rekap tiap bulan.",
                 style = MaterialTheme.typography.bodySmall,
             )

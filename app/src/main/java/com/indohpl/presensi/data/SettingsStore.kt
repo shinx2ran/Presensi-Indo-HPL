@@ -12,6 +12,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.indohpl.presensi.domain.BonusConfig
 import java.time.DayOfWeek
+import java.security.MessageDigest
+import java.security.SecureRandom
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -65,7 +67,34 @@ class SettingsStore(private val context: Context) {
         val STORE_LON = doublePreferencesKey("store_lon")
         val RADIUS = intPreferencesKey("radius_meters")
         val REQUIRE_LOCATION = booleanPreferencesKey("require_location")
+        val PIN_HASH = stringPreferencesKey("owner_pin_hash")
+        val PIN_SALT = stringPreferencesKey("owner_pin_salt")
     }
+
+    // ---------- PIN owner (pengaman tab Pengaturan) ----------
+
+    /** true jika owner sudah membuat PIN. */
+    val hasOwnerPin: Flow<Boolean> = context.dataStore.data.map { it[Keys.PIN_HASH] != null }
+
+    suspend fun setOwnerPin(pin: String) {
+        val salt = ByteArray(16).also { SecureRandom().nextBytes(it) }.toHex()
+        context.dataStore.edit { p ->
+            p[Keys.PIN_SALT] = salt
+            p[Keys.PIN_HASH] = hashPin(salt, pin)
+        }
+    }
+
+    suspend fun verifyOwnerPin(pin: String): Boolean {
+        val p = context.dataStore.data.first()
+        val salt = p[Keys.PIN_SALT] ?: return false
+        val hash = p[Keys.PIN_HASH] ?: return false
+        return hashPin(salt, pin) == hash
+    }
+
+    private fun hashPin(salt: String, pin: String): String =
+        MessageDigest.getInstance("SHA-256").digest((salt + ":" + pin).toByteArray(Charsets.UTF_8)).toHex()
+
+    private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { p -> p.toSettings() }
 

@@ -67,12 +67,22 @@ Izin/sakit **tidak** dipotong tetapi juga tidak dihitung "full bulan".
 
 Kalau ingin potongan tetap (misal Rp 10.000 per telat), isi angka itu di *Potongan per hari telat*.
 
+## Hak akses: kasir vs owner
+
+| Tab | Siapa | Isi |
+|---|---|---|
+| Beranda | kasir | absen, tandai izin/sakit, lihat foto, hapus salah tekan |
+| Rekap | kasir & owner | **hanya melihat** rekap bulanan, tidak ada tombol ubah/ekspor |
+| Pengaturan | **owner, dikunci PIN** | aturan jam, uang rajin, lokasi toko, hari libur, ekspor rekap, ganti PIN |
+
+PIN owner (4–8 angka) dibuat saat tab Pengaturan pertama kali dibuka. Disimpan sebagai hash (tidak bisa dibaca dari file). Salah 5 kali = terkunci 30 detik. Pindah tab = terkunci lagi. PIN yang lupa hanya bisa direset dengan menghapus data aplikasi.
+
 ## Rekap & ekspor ke Claude
 
 Tab **Rekap** menampilkan per karyawan: hari kerja, hadir, tepat, telat, izin, sakit, alpa, total potongan, uang rajin.
-Bulan berjalan ditandai "sementara".
+Bulan berjalan ditandai "sementara". Ketuk nama untuk detail harian.
 
-Tombol **Bagikan file** mengirim 3 file lewat menu bagikan Android (pilih aplikasi Claude, WhatsApp, Drive, dll):
+Ekspor ada di **Pengaturan (owner) → Ekspor rekap bulanan**. Tombol **Bagikan file** mengirim 3 file lewat menu bagikan Android (pilih aplikasi Claude, WhatsApp, Drive, dll):
 
 | File | Isi |
 |---|---|

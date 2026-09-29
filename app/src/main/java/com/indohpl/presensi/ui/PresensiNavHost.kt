@@ -112,7 +112,7 @@ fun PresensiNavHost(repository: Repository) {
                 )
             }
             composable(Routes.RECAP) {
-                RecapScreen(repository = repository, onMessage = ::toast)
+                RecapScreen(repository = repository)
             }
             composable(Routes.SETTINGS) {
                 SettingsScreen(repository = repository, onMessage = ::toast)
