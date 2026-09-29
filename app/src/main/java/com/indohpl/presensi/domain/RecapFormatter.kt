@@ -71,15 +71,14 @@ object RecapFormatter {
         records: List<AttendanceRecord>,
         employees: List<Employee>,
         config: BonusConfig,
-        workStart: String,
-        toleranceMinutes: Int,
+        rulesText: String,
         generatedAt: String,
     ): String {
         val names = employees.associate { it.id to it.name }
         val sb = StringBuilder()
         sb.append("# Rekap Presensi ${monthLabel(ym)}\n\n")
         sb.append("Dibuat: $generatedAt\n")
-        sb.append("Jam masuk: $workStart (toleransi $toleranceMinutes menit). ")
+        sb.append("Jam masuk: $rulesText. ")
         sb.append("Uang rajin penuh: ${rupiah(config.monthlyBonus)}/bulan. ")
         val perDay = recaps.firstOrNull()?.deductionPerDay ?: 0
         sb.append("Potongan per hari telat: ${rupiah(perDay)}")

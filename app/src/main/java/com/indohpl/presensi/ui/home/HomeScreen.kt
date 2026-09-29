@@ -118,8 +118,7 @@ fun HomeScreen(
         ) {
             item {
                 InfoBanner(
-                    workStart = settings.workStart,
-                    tolerance = settings.toleranceMinutes,
+                    rules = "P ${settings.workStartFemale} (+${settings.toleranceFemale} mnt) · L ${settings.workStartMale} (+${settings.toleranceMale} mnt)",
                     isWorkDay = isWorkDay,
                     holidayName = holiday?.name,
                     done = todayRecords.count { it.status == Status.TEPAT || it.status == Status.TELAT },
@@ -195,8 +194,7 @@ fun HomeScreen(
 
 @Composable
 private fun InfoBanner(
-    workStart: String,
-    tolerance: Int,
+    rules: String,
     isWorkDay: Boolean,
     holidayName: String?,
     done: Int,
@@ -204,11 +202,8 @@ private fun InfoBanner(
 ) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
         Column(Modifier.padding(16.dp)) {
-            Text(
-                "Jam masuk $workStart" + if (tolerance > 0) " (toleransi $tolerance menit)" else "",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
+            Text("Jam masuk", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(rules, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(4.dp))
             Text(
                 when {

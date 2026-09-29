@@ -98,8 +98,7 @@ fun RecapScreen(repository: Repository, onMessage: (String) -> Unit) {
         records = records,
         employees = employees,
         config = settings.bonusConfig(),
-        workStart = settings.workStart,
-        toleranceMinutes = settings.toleranceMinutes,
+        rulesText = settings.rulesText(),
         generatedAt = LocalDateTime.now().format(RecapFormatter.DATE_TIME_FMT),
     )
 

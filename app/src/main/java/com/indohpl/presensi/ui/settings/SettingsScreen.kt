@@ -70,8 +70,10 @@ fun SettingsScreen(repository: Repository, onMessage: (String) -> Unit) {
     val saved by repository.settingsStore.settings.collectAsStateWithLifecycle(null)
     val holidays by repository.observeHolidays().collectAsStateWithLifecycle(emptyList())
 
-    var workStart by remember { mutableStateOf("") }
-    var tolerance by remember { mutableStateOf("") }
+    var workStartF by remember { mutableStateOf("") }
+    var toleranceF by remember { mutableStateOf("") }
+    var workStartM by remember { mutableStateOf("") }
+    var toleranceM by remember { mutableStateOf("") }
     var bonus by remember { mutableStateOf("") }
     var deduction by remember { mutableStateOf("") }
     var deductAbsent by remember { mutableStateOf(true) }
@@ -105,8 +107,10 @@ fun SettingsScreen(repository: Repository, onMessage: (String) -> Unit) {
     LaunchedEffect(saved) {
         val s = saved ?: return@LaunchedEffect
         if (!loaded) {
-            workStart = s.workStart
-            tolerance = s.toleranceMinutes.toString()
+            workStartF = s.workStartFemale
+            toleranceF = s.toleranceFemale.toString()
+            workStartM = s.workStartMale
+            toleranceM = s.toleranceMale.toString()
             bonus = s.monthlyBonus.toString()
             deduction = s.lateDeduction.toString()
             deductAbsent = s.deductAbsent
@@ -122,13 +126,14 @@ fun SettingsScreen(repository: Repository, onMessage: (String) -> Unit) {
     var newHolidayName by remember { mutableStateOf("") }
 
     fun save() {
-        if (LateRule.parseWorkStart(workStart) == null) {
-            onMessage("Jam masuk harus format HH:mm, contoh 08:00"); return
+        if (LateRule.parseWorkStart(workStartF) == null || LateRule.parseWorkStart(workStartM) == null) {
+            onMessage("Jam masuk harus format HH:mm, contoh 07:45"); return
         }
-        val tol = tolerance.trim().toIntOrNull()
+        val tolF = toleranceF.trim().toIntOrNull()
+        val tolM = toleranceM.trim().toIntOrNull()
         val bon = bonus.trim().toLongOrNull()
         val ded = deduction.trim().toLongOrNull()
-        if (tol == null || tol < 0) { onMessage("Toleransi harus angka ≥ 0"); return }
+        if (tolF == null || tolF < 0 || tolM == null || tolM < 0) { onMessage("Toleransi harus angka ≥ 0"); return }
         if (bon == null || bon < 0) { onMessage("Uang rajin harus angka ≥ 0"); return }
         if (ded == null || ded < 0) { onMessage("Potongan harus angka ≥ 0 (0 = otomatis)"); return }
         if (workDays.isEmpty()) { onMessage("Pilih minimal satu hari kerja"); return }
@@ -139,8 +144,10 @@ fun SettingsScreen(repository: Repository, onMessage: (String) -> Unit) {
         scope.launch {
             repository.settingsStore.save(
                 AppSettings(
-                    workStart = workStart.trim(),
-                    toleranceMinutes = tol,
+                    workStartFemale = workStartF.trim(),
+                    toleranceFemale = tolF,
+                    workStartMale = workStartM.trim(),
+                    toleranceMale = tolM,
                     monthlyBonus = bon,
                     lateDeduction = ded,
                     deductAbsent = deductAbsent,
@@ -161,16 +168,36 @@ fun SettingsScreen(repository: Repository, onMessage: (String) -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("Aturan jam masuk", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            OutlinedTextField(
-                value = workStart, onValueChange = { workStart = it },
-                label = { Text("Jam masuk (HH:mm)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+            Text(
+                "Datang lewat dari jam masuk + toleransi = telat. Menit telat dihitung dari jam masuk.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            OutlinedTextField(
-                value = tolerance, onValueChange = { tolerance = it.filter(Char::isDigit) },
-                label = { Text("Toleransi telat (menit)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                supportingText = { Text("Datang lewat dari jam masuk + toleransi = telat.") },
-            )
+            Text("Perempuan (Sara, Riyanti)", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = workStartF, onValueChange = { workStartF = it },
+                    label = { Text("Jam masuk") }, singleLine = true, modifier = Modifier.weight(1f),
+                    placeholder = { Text("07:45") },
+                )
+                OutlinedTextField(
+                    value = toleranceF, onValueChange = { toleranceF = it.filter(Char::isDigit) },
+                    label = { Text("Toleransi (mnt)") }, singleLine = true, modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                )
+            }
+            Text("Laki-laki (Evan, Madi, Roni)", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = workStartM, onValueChange = { workStartM = it },
+                    label = { Text("Jam masuk") }, singleLine = true, modifier = Modifier.weight(1f),
+                    placeholder = { Text("08:00") },
+                )
+                OutlinedTextField(
+                    value = toleranceM, onValueChange = { toleranceM = it.filter(Char::isDigit) },
+                    label = { Text("Toleransi (mnt)") }, singleLine = true, modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                )
+            }
 
             Text("Hari kerja", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {

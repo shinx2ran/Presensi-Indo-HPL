@@ -32,7 +32,15 @@ Beranda ──tap "Absen"──▶ [1] Biometrik HP kasir ──▶ [2] Selfie (
 ```
 
 * Satu karyawan hanya bisa absen **sekali per hari** (dijaga di database).
-* Status **telat** = jam foto lebih dari *jam masuk + toleransi* (default 08:00, toleransi 0).
+* Status **telat** = jam foto lebih dari *jam masuk + toleransi*. Aturan per gender:
+
+  | Gender | Jam masuk | Toleransi | Batas dianggap tepat |
+  |---|---|---|---|
+  | Perempuan (Sara, Riyanti) | 07:45 | 10 menit | 07:55:00 |
+  | Laki-laki (Evan, Madi, Roni) | 08:00 | 5 menit | 08:05:00 |
+
+  Menit telat dihitung dari jam masuk (perempuan datang 07:56 = telat 11 menit).
+* Hanya **jam masuk** yang dicatat, tidak ada check-out.
 * Kasir bisa menandai **Izin** / **Sakit** dari menu ⋮ di kartu karyawan (tanpa selfie, tidak dipotong).
 * Menu ⋮ juga bisa **Lihat foto** dan **Hapus catatan hari ini** (untuk salah tekan).
 
@@ -49,8 +57,8 @@ Beranda ──tap "Absen"──▶ [1] Biometrik HP kasir ──▶ [2] Selfie (
 | Parameter | Default |
 |---|---|
 | Uang rajin penuh per bulan | Rp 250.000 |
-| Potongan per hari telat | otomatis = 250.000 ÷ jumlah hari kerja bulan itu (≈ Rp 9.615 untuk 26 hari kerja) |
-| Hari kerja | Senin–Sabtu |
+| Potongan per hari telat | otomatis = 250.000 ÷ jumlah hari kerja bulan itu (≈ Rp 8.333 untuk 30 hari kerja) |
+| Hari kerja | Senin–Minggu (setiap hari), kecuali tanggal libur toko |
 | Hari libur toko | daftar tanggal di Pengaturan (tidak dihitung hari kerja) |
 | Alpa (tidak absen, tanpa izin/sakit) | ikut dipotong (bisa dimatikan) |
 

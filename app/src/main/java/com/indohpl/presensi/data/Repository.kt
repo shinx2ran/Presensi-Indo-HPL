@@ -56,8 +56,14 @@ class Repository(context: Context) {
     ): AttendanceRecord? {
         val date = capturedAt.toLocalDate().toString()
         if (attendanceDao.find(employeeId, date) != null) return null
+        val employee = employeeDao.getById(employeeId) ?: return null
         val s = settingsStore.current()
-        val late = LateRule.lateMinutes(capturedAt.toLocalTime(), s.workStart, s.toleranceMinutes)
+        // Aturan per gender: perempuan 07:45 (+10), laki-laki 08:00 (+5) secara bawaan.
+        val late = LateRule.lateMinutes(
+            capturedAt.toLocalTime(),
+            s.workStartFor(employee.gender),
+            s.toleranceFor(employee.gender),
+        )
         val rec = AttendanceRecord(
             employeeId = employeeId,
             date = date,

@@ -131,6 +131,23 @@ class BonusCalculatorTest {
     }
 
     @Test
+    fun genderRulesFromUser() {
+        // Perempuan: 07:45 toleransi 10 -> batas 07:55
+        assertEquals(0, LateRule.lateMinutes(LocalTime.of(7, 55, 0), "07:45", 10))
+        assertEquals(11, LateRule.lateMinutes(LocalTime.of(7, 56, 0), "07:45", 10))
+        // Laki-laki: 08:00 toleransi 5 -> batas 08:05
+        assertEquals(0, LateRule.lateMinutes(LocalTime.of(8, 5, 0), "08:00", 5))
+        assertEquals(6, LateRule.lateMinutes(LocalTime.of(8, 6, 0), "08:00", 5))
+    }
+
+    @Test
+    fun sevenDayWorkWeek() {
+        val all = java.time.DayOfWeek.values().toSet()
+        assertEquals(30, BonusCalculator.workDays(sep, all, emptySet()).size)
+        assertEquals(8_333L, BonusCalculator.deductionPerDay(config, 30))
+    }
+
+    @Test
     fun lateRuleRespectsTolerance() {
         assertEquals(0, LateRule.lateMinutes(LocalTime.of(7, 59, 59), "08:00", 0))
         assertEquals(0, LateRule.lateMinutes(LocalTime.of(8, 0, 0), "08:00", 0))
@@ -146,7 +163,7 @@ class BonusCalculatorTest {
         val recaps = BonusCalculator.recap(sep, LocalDate.of(2026, 9, 1), listOf(sara), records, monSat, emptySet(), config)
         val csv = RecapFormatter.detailCsv(sep, listOf(sara), records)
         assertTrue(csv.contains("2026-09-01,Sara,TELAT,08:00:00,12,,"))
-        val md = RecapFormatter.markdown(sep, recaps, records, listOf(sara), config, "08:00", 0, "01/09/2026 09:00:00")
+        val md = RecapFormatter.markdown(sep, recaps, records, listOf(sara), config, "Perempuan 07:45 (toleransi 10 mnt) · Laki-laki 08:00 (toleransi 5 mnt)", "01/09/2026 09:00:00")
         assertTrue(md.contains("# Rekap Presensi September 2026"))
         assertTrue(md.contains("| Sara | 26 |"))
         assertEquals("Rp 250.000", RecapFormatter.rupiah(250_000))
