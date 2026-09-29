@@ -111,9 +111,16 @@ fun CheckInScreen(
     var hasCameraPermission by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
     }
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        hasCameraPermission = granted
-        if (!granted) error = "Izin kamera ditolak. Aktifkan izin kamera untuk aplikasi ini di Pengaturan HP."
+    var hasLocationPermission by remember { mutableStateOf(LocationHelper.hasPermission(context)) }
+    var geoAttempt by remember { mutableIntStateOf(0) }
+    // Satu dialog izin untuk kamera + lokasi sekaligus.
+    val allPermissions = remember { arrayOf(Manifest.permission.CAMERA) + LocationHelper.PERMISSIONS }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        hasCameraPermission = result[Manifest.permission.CAMERA] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        hasLocationPermission = LocationHelper.hasPermission(context)
+        if (!hasCameraPermission) error = "Izin kamera ditolak. Aktifkan izin kamera untuk aplikasi ini di Pengaturan HP."
+        if (hasLocationPermission) geoAttempt++
     }
     val imageCapture = remember {
         ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY).build()
@@ -123,18 +130,12 @@ fun CheckInScreen(
     val settings by repository.settingsStore.settings.collectAsStateWithLifecycle(AppSettings())
     var geoState by remember { mutableStateOf(GeoState.IDLE) }
     var geo by remember { mutableStateOf<GeoCheck?>(null) }
-    var geoAttempt by remember { mutableIntStateOf(0) }
-    var hasLocationPermission by remember { mutableStateOf(LocationHelper.hasPermission(context)) }
-    val locationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        hasLocationPermission = result.values.any { it }
-        if (hasLocationPermission) geoAttempt++ else geoState = GeoState.FAILED
-    }
 
     // Cari posisi setiap kali masuk langkah kamera (dan setiap "Coba lagi").
     LaunchedEffect(step, geoAttempt, hasLocationPermission) {
         if (step != Step.CAMERA) return@LaunchedEffect
         if (!hasLocationPermission) {
-            locationPermissionLauncher.launch(LocationHelper.PERMISSIONS)
+            geoState = GeoState.FAILED
             return@LaunchedEffect
         }
         geoState = GeoState.SEARCHING
@@ -181,7 +182,7 @@ fun CheckInScreen(
             when (result) {
                 BiometricResult.Success -> {
                     step = Step.CAMERA
-                    if (!hasCameraPermission) permissionLauncher.launch(Manifest.permission.CAMERA)
+                    if (!hasCameraPermission || !hasLocationPermission) permissionLauncher.launch(allPermissions)
                 }
                 is BiometricResult.Failed -> error = "Verifikasi gagal: ${result.message}"
             }
@@ -329,7 +330,7 @@ fun CheckInScreen(
                                 Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
                             }
                             Spacer(Modifier.height(16.dp))
-                            Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) { Text("Beri izin kamera") }
+                            Button(onClick = { permissionLauncher.launch(allPermissions) }) { Text("Beri izin kamera") }
                         }
                     } else {
                         Column(Modifier.fillMaxSize()) {
@@ -358,7 +359,7 @@ fun CheckInScreen(
                                 storeSet = settings.hasStoreLocation,
                                 required = locationRequired,
                                 onRetry = {
-                                    if (hasLocationPermission) geoAttempt++ else locationPermissionLauncher.launch(LocationHelper.PERMISSIONS)
+                                    if (hasLocationPermission) geoAttempt++ else permissionLauncher.launch(allPermissions)
                                 },
                             )
                             Row(
