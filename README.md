@@ -84,10 +84,14 @@ Tombol **Salin teks** menyalin rekap Markdown ke clipboard.
 
 ## Cara mendapatkan APK
 
-Setiap push ke GitHub menjalankan workflow **Build APK** (`.github/workflows/android.yml`):
+Cara termudah: buka link ini di browser HP kasir, file APK langsung terunduh:
 
-1. Buka tab **Actions** di repo → pilih run terbaru → bagian **Artifacts** → unduh `presensi-indo-hpl-debug`.
-2. Ekstrak `app-debug.apk`, kirim ke HP kasir, izinkan "instal dari sumber tidak dikenal", instal.
+**https://github.com/shinx2ran/Presensi-Indo-HPL/raw/apk-build/PresensiIndoHPL.apk**
+
+Link itu selalu berisi build terbaru. Setiap push ke GitHub menjalankan workflow **Build APK** (`.github/workflows/android.yml`) yang membangun APK, menyimpannya ke branch `apk-build`, dan juga sebagai artifact di tab Actions.
+
+1. Unduh APK lewat link di atas (atau tab **Actions** → run terbaru → **Artifacts**).
+2. Ketuk file APK di HP kasir, izinkan "instal dari sumber tidak dikenal", instal.
 3. Buka aplikasi → beri izin kamera dan lokasi saat diminta. Nyalakan **Lokasi** di HP (mode akurasi tinggi).
 
 Atau build sendiri di Android Studio (Ladybug atau lebih baru): buka folder proyek → *Build ▸ Build APK(s)*.
