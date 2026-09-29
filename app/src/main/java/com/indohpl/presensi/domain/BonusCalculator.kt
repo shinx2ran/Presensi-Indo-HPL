@@ -28,6 +28,7 @@ data class EmployeeRecap(
     val izin: Int,
     val sakit: Int,
     val alpa: Int,                 // hari kerja lewat tanpa catatan apa pun
+    val outsideLocation: Int,      // hadir tapi selfie di luar radius toko / GPS tidak ada
     val totalLateMinutes: Int,
     val deductionPerDay: Long,
     val deductedDays: Int,         // telat (+ alpa jika diaktifkan)
@@ -77,6 +78,7 @@ object BonusCalculator {
             val izin = recs.count { it.status == Status.IZIN }
             val sakit = recs.count { it.status == Status.SAKIT }
             val alpa = elapsed.count { byDate[it.toString()] == null }
+            val outside = recs.count { (it.status == Status.TEPAT || it.status == Status.TELAT) && !it.inLocation }
             val deductedDays = telat + if (config.deductAbsent) alpa else 0
             val totalDeduction = (perDay * deductedDays).coerceAtMost(config.monthlyBonus)
             val fullMonth = days.isNotEmpty() &&
@@ -91,6 +93,7 @@ object BonusCalculator {
                 izin = izin,
                 sakit = sakit,
                 alpa = alpa,
+                outsideLocation = outside,
                 totalLateMinutes = recs.sumOf { it.lateMinutes },
                 deductionPerDay = perDay,
                 deductedDays = deductedDays,

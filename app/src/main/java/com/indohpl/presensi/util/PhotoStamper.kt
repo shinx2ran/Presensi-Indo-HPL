@@ -21,7 +21,17 @@ object PhotoStamper {
     private const val MAX_SIDE = 1280
     private val FMT: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE dd/MM/yyyy HH:mm:ss")
 
-    fun stamp(source: File, target: File, employeeName: String, capturedAt: LocalDateTime, footer: String): File {
+    /**
+     * [extraLines] ditulis di bawah nama & waktu, mis. koordinat GPS dan status lokasi.
+     */
+    fun stamp(
+        source: File,
+        target: File,
+        employeeName: String,
+        capturedAt: LocalDateTime,
+        footer: String,
+        extraLines: List<String> = emptyList(),
+    ): File {
         val bitmap = decodeScaledUpright(source)
         val out = bitmap.copy(Bitmap.Config.ARGB_8888, true)
         bitmap.recycle()
@@ -33,8 +43,7 @@ object PhotoStamper {
         val padding = textSize * 0.6f
 
         val line1 = employeeName
-        val line2 = capturedAt.format(FMT)
-        val line3 = footer
+        val smallLines = listOf(capturedAt.format(FMT)) + extraLines + footer
 
         val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
@@ -49,15 +58,15 @@ object PhotoStamper {
         val boxPaint = Paint().apply { color = Color.argb(150, 0, 0, 0) }
 
         val lineGap = textSize * 0.35f
-        val boxHeight = padding * 2 + textSize + smallPaint.textSize * 2 + lineGap * 2
+        val boxHeight = padding * 2 + textSize + (smallPaint.textSize + lineGap) * smallLines.size
         canvas.drawRect(0f, h - boxHeight, w, h, boxPaint)
 
         var y = h - boxHeight + padding + textSize
         canvas.drawText(line1, padding, y, textPaint)
-        y += smallPaint.textSize + lineGap
-        canvas.drawText(line2, padding, y, smallPaint)
-        y += smallPaint.textSize + lineGap
-        canvas.drawText(line3, padding, y, smallPaint)
+        smallLines.forEach { line ->
+            y += smallPaint.textSize + lineGap
+            canvas.drawText(line, padding, y, smallPaint)
+        }
 
         target.parentFile?.mkdirs()
         FileOutputStream(target).use { out.compress(Bitmap.CompressFormat.JPEG, 85, it) }

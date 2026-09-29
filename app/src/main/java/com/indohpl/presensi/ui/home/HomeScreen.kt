@@ -256,6 +256,10 @@ private fun EmployeeCard(
                                 else -> record.status
                             },
                         )
+                        if ((record.status == Status.TEPAT || record.status == Status.TELAT) && !record.inLocation) {
+                            Spacer(Modifier.width(6.dp))
+                            StatusPill(status = Status.TELAT, text = "Luar lokasi")
+                        }
                     }
                 }
             }

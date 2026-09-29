@@ -48,6 +48,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.indohpl.presensi.data.AppSettings
 import com.indohpl.presensi.data.AttendanceRecord
 import com.indohpl.presensi.data.Repository
+import com.indohpl.presensi.data.Status
 import com.indohpl.presensi.domain.BonusCalculator
 import com.indohpl.presensi.domain.EmployeeRecap
 import com.indohpl.presensi.domain.RecapFormatter
@@ -226,7 +227,8 @@ private fun RecapCard(
                     Text(recap.employee.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(
                         "Hadir ${recap.hadir}/${recap.workDaysElapsed} · Tepat ${recap.tepat} · Telat ${recap.telat} · Alpa ${recap.alpa}" +
-                            if (recap.izin + recap.sakit > 0) " · Izin/Sakit ${recap.izin + recap.sakit}" else "",
+                            (if (recap.izin + recap.sakit > 0) " · Izin/Sakit ${recap.izin + recap.sakit}" else "") +
+                            (if (recap.outsideLocation > 0) " · Luar lokasi ${recap.outsideLocation}" else ""),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -272,6 +274,10 @@ private fun RecapCard(
                                 status = rec.status,
                                 text = if (rec.lateMinutes > 0) "Telat ${rec.lateMinutes} mnt" else com.indohpl.presensi.ui.statusLabel(rec.status),
                             )
+                            if ((rec.status == Status.TEPAT || rec.status == Status.TELAT) && !rec.inLocation) {
+                                Spacer(Modifier.width(6.dp))
+                                StatusPill(status = Status.TELAT, text = "Luar lokasi")
+                            }
                             if (rec.note.isNotBlank()) {
                                 Spacer(Modifier.width(8.dp))
                                 Text(rec.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

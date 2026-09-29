@@ -153,3 +153,80 @@ class BonusCalculatorTest {
         assertEquals("Rp 9.615", RecapFormatter.rupiah(9_615))
     }
 }
+
+class GeoRuleTest {
+    // Contoh titik: Monas, Jakarta.
+    private val storeLat = -6.175392
+    private val storeLon = 106.827153
+
+    @Test
+    fun distanceIsZeroAtSamePoint() {
+        assertEquals(0.0, GeoRule.distanceMeters(storeLat, storeLon, storeLat, storeLon), 0.001)
+    }
+
+    @Test
+    fun distanceRoughlyOneKilometreNorth() {
+        // 0.009 derajat lintang ≈ 1.000 m
+        val d = GeoRule.distanceMeters(storeLat, storeLon, storeLat + 0.009, storeLon)
+        assertTrue("d=$d", d > 990 && d < 1010)
+    }
+
+    @Test
+    fun insideRadiusIsInLocation() {
+        val g = GeoRule.check(storeLat + 0.0003, storeLon, 15f, false, storeLat, storeLon, 100)
+        assertTrue(g.inLocation)
+        assertEquals("di lokasi toko", g.note)
+        assertTrue((g.distanceMeters ?: 0) in 25..40)
+    }
+
+    @Test
+    fun accuracyGivesBenefitOfDoubt() {
+        // 120 m dari titik, akurasi ±30 m -> efektif 90 m <= 100 m radius
+        val g = GeoRule.check(storeLat + 0.00108, storeLon, 30f, false, storeLat, storeLon, 100)
+        assertTrue("d=${g.distanceMeters}", g.inLocation)
+        val g2 = GeoRule.check(storeLat + 0.00108, storeLon, 5f, false, storeLat, storeLon, 100)
+        assertFalse(g2.inLocation)
+        assertEquals("di luar lokasi", g2.note)
+    }
+
+    @Test
+    fun mockLocationIsRejected() {
+        val g = GeoRule.check(storeLat, storeLon, 5f, true, storeLat, storeLon, 100)
+        assertFalse(g.inLocation)
+        assertEquals("lokasi palsu", g.note)
+    }
+
+    @Test
+    fun noStoreConfigured() {
+        val g = GeoRule.check(storeLat, storeLon, 5f, false, null, null, 100)
+        assertFalse(g.inLocation)
+        assertEquals(null, g.distanceMeters)
+        assertEquals("titik toko belum diatur", g.note)
+    }
+
+    @Test
+    fun parseAndFormat() {
+        assertEquals(-6.2 to 106.816666, GeoRule.parseLatLon("-6.2, 106.816666"))
+        assertEquals(-6.2 to 106.816666, GeoRule.parseLatLon("-6.2 106.816666"))
+        assertEquals(null, GeoRule.parseLatLon("abc"))
+        assertEquals(null, GeoRule.parseLatLon("95, 10"))
+        assertEquals("-6.175392, 106.827153", GeoRule.formatCoord(storeLat, storeLon))
+        assertEquals("35 m", GeoRule.formatDistance(35))
+        assertEquals("1,2 km", GeoRule.formatDistance(1234))
+    }
+
+    @Test
+    fun outsideLocationCountedInRecap() {
+        val emp = Employee(1, "Sara", "P")
+        val ym = YearMonth.of(2026, 9)
+        val days = setOf(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY, DayOfWeek.SATURDAY)
+        val records = listOf(
+            AttendanceRecord(employeeId = 1, date = "2026-09-01", timestamp = 0, timeIn = "07:50:00", status = Status.TEPAT, lateMinutes = 0, photoPath = null, inLocation = true),
+            AttendanceRecord(employeeId = 1, date = "2026-09-02", timestamp = 0, timeIn = "07:50:00", status = Status.TEPAT, lateMinutes = 0, photoPath = null, inLocation = false, locationNote = "di luar lokasi"),
+        )
+        val r = BonusCalculator.recap(ym, LocalDate.of(2026, 9, 2), listOf(emp), records, days, emptySet(), BonusConfig(250_000, 0, true)).single()
+        assertEquals(1, r.outsideLocation)
+        val csv = RecapFormatter.detailCsv(ym, listOf(emp), records)
+        assertTrue(csv.contains("2026-09-02,Sara,TEPAT,07:50:00,0,,,,,,,TIDAK,di luar lokasi"))
+    }
+}

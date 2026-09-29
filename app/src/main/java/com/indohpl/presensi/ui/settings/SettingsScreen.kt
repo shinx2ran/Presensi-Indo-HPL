@@ -14,7 +14,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -44,7 +48,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.indohpl.presensi.data.AppSettings
 import com.indohpl.presensi.data.Holiday
 import com.indohpl.presensi.data.Repository
+import com.indohpl.presensi.domain.GeoRule
 import com.indohpl.presensi.domain.LateRule
+import com.indohpl.presensi.util.LocationHelper
 import com.indohpl.presensi.domain.RecapFormatter
 import com.indohpl.presensi.ui.shortLabel
 import java.time.DayOfWeek
@@ -59,6 +65,7 @@ private val dayLabels = mapOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(repository: Repository, onMessage: (String) -> Unit) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val saved by repository.settingsStore.settings.collectAsStateWithLifecycle(null)
     val holidays by repository.observeHolidays().collectAsStateWithLifecycle(emptyList())
@@ -69,7 +76,30 @@ fun SettingsScreen(repository: Repository, onMessage: (String) -> Unit) {
     var deduction by remember { mutableStateOf("") }
     var deductAbsent by remember { mutableStateOf(true) }
     var workDays by remember { mutableStateOf<Set<DayOfWeek>>(emptySet()) }
+    var storeLatLon by remember { mutableStateOf("") }      // "lat, lon"
+    var radius by remember { mutableStateOf("100") }
+    var requireLocation by remember { mutableStateOf(true) }
+    var locating by remember { mutableStateOf(false) }
     var loaded by remember { mutableStateOf(false) }
+
+    fun fetchStoreLocation() {
+        locating = true
+        scope.launch {
+            val loc = LocationHelper.current(context)
+            locating = false
+            if (loc == null) {
+                onMessage("GPS tidak didapat. Nyalakan Lokasi HP lalu coba lagi.")
+            } else if (LocationHelper.isMock(loc)) {
+                onMessage("Terdeteksi lokasi palsu. Matikan aplikasi fake GPS.")
+            } else {
+                storeLatLon = GeoRule.formatCoord(loc.latitude, loc.longitude)
+                onMessage("Posisi HP diambil (akurasi ±${loc.accuracy.toInt()} m). Tekan Simpan pengaturan.")
+            }
+        }
+    }
+    val locationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        if (result.values.any { it }) fetchStoreLocation() else onMessage("Izin lokasi ditolak.")
+    }
 
     // Isi form sekali dari nilai tersimpan.
     LaunchedEffect(saved) {
@@ -81,6 +111,9 @@ fun SettingsScreen(repository: Repository, onMessage: (String) -> Unit) {
             deduction = s.lateDeduction.toString()
             deductAbsent = s.deductAbsent
             workDays = s.workDays
+            storeLatLon = if (s.storeLat != null && s.storeLon != null) GeoRule.formatCoord(s.storeLat, s.storeLon) else ""
+            radius = s.radiusMeters.toString()
+            requireLocation = s.requireLocation
             loaded = true
         }
     }
@@ -99,6 +132,10 @@ fun SettingsScreen(repository: Repository, onMessage: (String) -> Unit) {
         if (bon == null || bon < 0) { onMessage("Uang rajin harus angka ≥ 0"); return }
         if (ded == null || ded < 0) { onMessage("Potongan harus angka ≥ 0 (0 = otomatis)"); return }
         if (workDays.isEmpty()) { onMessage("Pilih minimal satu hari kerja"); return }
+        val latLon = if (storeLatLon.isBlank()) null else GeoRule.parseLatLon(storeLatLon)
+        if (storeLatLon.isNotBlank() && latLon == null) { onMessage("Koordinat harus \"lat, lon\", contoh -6.200000, 106.816666"); return }
+        val rad = radius.trim().toIntOrNull()
+        if (rad == null || rad < 10) { onMessage("Radius minimal 10 meter"); return }
         scope.launch {
             repository.settingsStore.save(
                 AppSettings(
@@ -108,6 +145,10 @@ fun SettingsScreen(repository: Repository, onMessage: (String) -> Unit) {
                     lateDeduction = ded,
                     deductAbsent = deductAbsent,
                     workDays = workDays,
+                    storeLat = latLon?.first,
+                    storeLon = latLon?.second,
+                    radiusMeters = rad,
+                    requireLocation = requireLocation,
                 ),
             )
             onMessage("Pengaturan disimpan")
@@ -168,6 +209,41 @@ fun SettingsScreen(repository: Repository, onMessage: (String) -> Unit) {
                 }
                 Switch(checked = deductAbsent, onCheckedChange = { deductAbsent = it })
             }
+            Text("Lokasi toko Indo HPL", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                "Selfie hanya sah bila HP berada dalam radius ini dari titik toko. Ambil titiknya sambil berdiri di dalam toko, atau salin koordinat dari Google Maps (tekan lama lokasi → angka di atas).",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = storeLatLon, onValueChange = { storeLatLon = it },
+                label = { Text("Koordinat toko (lat, lon)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("-6.200000, 106.816666") },
+                supportingText = { if (storeLatLon.isBlank()) Text("Kosong = pengecekan lokasi tidak aktif.") },
+            )
+            OutlinedButton(
+                onClick = {
+                    if (LocationHelper.hasPermission(context)) fetchStoreLocation() else locationPermissionLauncher.launch(LocationHelper.PERMISSIONS)
+                },
+                enabled = !locating,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(if (locating) "Mencari posisi GPS…" else "Pakai lokasi HP sekarang") }
+            OutlinedTextField(
+                value = radius, onValueChange = { radius = it.filter(Char::isDigit) },
+                label = { Text("Radius toleransi (meter)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                supportingText = { Text("Akurasi GPS ikut diperhitungkan. 100 m cukup untuk toko di dalam ruko/mall.") },
+            )
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f)) {
+                    Text("Wajib di lokasi toko")
+                    Text(
+                        "Aktif: absen ditolak jika di luar radius atau GPS tidak didapat. Nonaktif: tetap tercatat tapi ditandai \"di luar lokasi\".",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = requireLocation, onCheckedChange = { requireLocation = it })
+            }
+
             Button(onClick = { save() }, modifier = Modifier.fillMaxWidth()) { Text("Simpan pengaturan") }
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
@@ -221,6 +297,7 @@ fun SettingsScreen(repository: Repository, onMessage: (String) -> Unit) {
             Text(
                 "• Biometrik memakai sidik jari/wajah/PIN yang terdaftar di HP kasir ini. Android tidak memberi tahu aplikasi sidik jari siapa yang dipakai, jadi bukti identitas utama adalah selfie berstempel waktu.\n" +
                     "• Waktu diambil dari jam HP kasir. Pastikan jam HP otomatis (dari jaringan).\n" +
+                    "• Koordinat GPS dibakar ke foto. Aplikasi fake GPS terdeteksi dan ditolak.\n" +
                     "• Foto tersimpan di dalam aplikasi (folder privat). Menghapus aplikasi = menghapus semua data. Ekspor rekap tiap bulan.",
                 style = MaterialTheme.typography.bodySmall,
             )

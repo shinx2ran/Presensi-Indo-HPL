@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cameraswitch
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -39,6 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -58,15 +60,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.indohpl.presensi.data.AppSettings
 import com.indohpl.presensi.data.Employee
 import com.indohpl.presensi.data.Repository
 import com.indohpl.presensi.data.Status
+import com.indohpl.presensi.domain.GeoCheck
+import com.indohpl.presensi.domain.GeoRule
 import com.indohpl.presensi.ui.StatusPill
 import com.indohpl.presensi.ui.findFragmentActivity
+import com.indohpl.presensi.ui.theme.Amber
 import com.indohpl.presensi.ui.theme.Green
 import com.indohpl.presensi.ui.theme.Red
 import com.indohpl.presensi.util.Biometric
 import com.indohpl.presensi.util.BiometricResult
+import com.indohpl.presensi.util.LocationHelper
 import com.indohpl.presensi.util.PhotoStamper
 import java.io.File
 import java.time.LocalDateTime
@@ -77,7 +85,9 @@ import kotlinx.coroutines.withContext
 
 private enum class Step { LOADING, BIOMETRIC, CAMERA, PROCESSING, CONFIRM, SAVED }
 
-private data class Shot(val file: File, val capturedAt: LocalDateTime, val preview: ImageBitmap?)
+private data class Shot(val file: File, val capturedAt: LocalDateTime, val preview: ImageBitmap?, val geo: GeoCheck?)
+
+private enum class GeoState { IDLE, SEARCHING, FOUND, FAILED }
 
 private val FILE_TS: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")
 
@@ -108,6 +118,47 @@ fun CheckInScreen(
     val imageCapture = remember {
         ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY).build()
     }
+
+    // ---- Lokasi GPS ----
+    val settings by repository.settingsStore.settings.collectAsStateWithLifecycle(AppSettings())
+    var geoState by remember { mutableStateOf(GeoState.IDLE) }
+    var geo by remember { mutableStateOf<GeoCheck?>(null) }
+    var geoAttempt by remember { mutableIntStateOf(0) }
+    var hasLocationPermission by remember { mutableStateOf(LocationHelper.hasPermission(context)) }
+    val locationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        hasLocationPermission = result.values.any { it }
+        if (hasLocationPermission) geoAttempt++ else geoState = GeoState.FAILED
+    }
+
+    // Cari posisi setiap kali masuk langkah kamera (dan setiap "Coba lagi").
+    LaunchedEffect(step, geoAttempt, hasLocationPermission) {
+        if (step != Step.CAMERA) return@LaunchedEffect
+        if (!hasLocationPermission) {
+            locationPermissionLauncher.launch(LocationHelper.PERMISSIONS)
+            return@LaunchedEffect
+        }
+        geoState = GeoState.SEARCHING
+        val loc = LocationHelper.current(context)
+        if (loc == null) {
+            geo = null
+            geoState = GeoState.FAILED
+        } else {
+            geo = GeoRule.check(
+                latitude = loc.latitude,
+                longitude = loc.longitude,
+                accuracy = if (loc.hasAccuracy()) loc.accuracy else null,
+                isMock = LocationHelper.isMock(loc),
+                storeLat = settings.storeLat,
+                storeLon = settings.storeLon,
+                radiusMeters = settings.radiusMeters,
+            )
+            geoState = GeoState.FOUND
+        }
+    }
+
+    // Boleh jepret? Jika "wajib di lokasi" aktif dan titik toko sudah diatur: harus dapat GPS dan di dalam radius.
+    val locationRequired = settings.requireLocation && settings.hasStoreLocation
+    val canCapture = !locationRequired || (geo?.inLocation == true)
 
     fun runBiometric() {
         val emp = employee ?: return
@@ -170,12 +221,26 @@ fun CheckInScreen(
                         try {
                             val monthDir = File(repository.photoRoot, capturedAt.toLocalDate().toString().take(7))
                             val target = File(monthDir, "${emp.name}_${capturedAt.format(FILE_TS)}.jpg")
+                            val g = geo
+                            val extra = if (g == null) {
+                                listOf("GPS tidak didapat")
+                            } else {
+                                listOf(
+                                    GeoRule.formatCoord(g.latitude, g.longitude) + (g.accuracy?.let { " (±${it.toInt()} m)" } ?: ""),
+                                    when {
+                                        g.isMock -> "LOKASI PALSU"
+                                        g.distanceMeters == null -> "Titik toko belum diatur"
+                                        g.inLocation -> "Di lokasi Indo HPL · ${GeoRule.formatDistance(g.distanceMeters)} dari titik toko"
+                                        else -> "DI LUAR LOKASI · ${GeoRule.formatDistance(g.distanceMeters)} dari titik toko"
+                                    },
+                                )
+                            }
                             val preview = withContext(Dispatchers.IO) {
-                                PhotoStamper.stamp(tmp, target, emp.name, capturedAt, "Presensi Indo HPL · HP Kasir")
+                                PhotoStamper.stamp(tmp, target, emp.name, capturedAt, "Presensi Indo HPL · HP Kasir", extra)
                                 tmp.delete()
                                 BitmapFactory.decodeFile(target.absolutePath)?.asImageBitmap()
                             }
-                            shot = Shot(target, capturedAt, preview)
+                            shot = Shot(target, capturedAt, preview, g)
                             step = Step.CONFIRM
                         } catch (e: Exception) {
                             error = "Gagal memproses foto: ${e.message}"
@@ -197,7 +262,7 @@ fun CheckInScreen(
         val s = shot ?: return
         step = Step.PROCESSING
         scope.launch {
-            val rec = repository.recordCheckIn(emp.id, s.capturedAt, s.file.absolutePath)
+            val rec = repository.recordCheckIn(emp.id, s.capturedAt, s.file.absolutePath, s.geo)
             if (rec == null) {
                 s.file.delete()
                 onFinished("${emp.name} sudah absen hari ini.")
@@ -286,8 +351,18 @@ fun CheckInScreen(
                                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                                 )
                             }
+                            LocationStatus(
+                                state = geoState,
+                                geo = geo,
+                                hasPermission = hasLocationPermission,
+                                storeSet = settings.hasStoreLocation,
+                                required = locationRequired,
+                                onRetry = {
+                                    if (hasLocationPermission) geoAttempt++ else locationPermissionLauncher.launch(LocationHelper.PERMISSIONS)
+                                },
+                            )
                             Row(
-                                Modifier.fillMaxWidth().padding(24.dp),
+                                Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
                                 horizontalArrangement = Arrangement.SpaceEvenly,
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
@@ -300,6 +375,7 @@ fun CheckInScreen(
                                 }) { Icon(Icons.Filled.Cameraswitch, contentDescription = "Ganti kamera", Modifier.size(32.dp)) }
                                 FilledIconButton(
                                     onClick = { takePhoto() },
+                                    enabled = canCapture,
                                     modifier = Modifier.size(80.dp),
                                     colors = IconButtonDefaults.filledIconButtonColors(),
                                 ) { Icon(Icons.Filled.PhotoCamera, contentDescription = "Jepret", Modifier.size(40.dp)) }
@@ -323,6 +399,16 @@ fun CheckInScreen(
                             "Waktu foto: ${s?.capturedAt?.format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")) ?: ""}",
                             style = MaterialTheme.typography.bodyLarge,
                         )
+                        s?.geo?.let { g ->
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Lokasi: ${GeoRule.formatCoord(g.latitude, g.longitude)} · ${g.note}" +
+                                    (g.distanceMeters?.let { " (${GeoRule.formatDistance(it)})" } ?: ""),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (g.inLocation) Green else MaterialTheme.colorScheme.error,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
                         Spacer(Modifier.height(16.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             OutlinedButton(onClick = { retake() }) { Text("Foto ulang") }
@@ -351,6 +437,12 @@ fun CheckInScreen(
                         Spacer(Modifier.height(8.dp))
                         StatusPill(status = status, text = if (ok) "Tepat waktu" else "Telat $late menit")
                         Spacer(Modifier.height(8.dp))
+                        shot?.geo?.let { g ->
+                            Text(
+                                if (g.inLocation) "Di lokasi Indo HPL" else "Di luar lokasi toko (${g.note})",
+                                color = if (g.inLocation) Green else MaterialTheme.colorScheme.error,
+                            )
+                        }
                         Text(
                             shot?.capturedAt?.format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")) ?: "",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -363,6 +455,47 @@ fun CheckInScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LocationStatus(
+    state: GeoState,
+    geo: GeoCheck?,
+    hasPermission: Boolean,
+    storeSet: Boolean,
+    required: Boolean,
+    onRetry: () -> Unit,
+) {
+    val (text, color) = when {
+        !hasPermission -> "Izin lokasi belum diberikan." to MaterialTheme.colorScheme.error
+        state == GeoState.IDLE || state == GeoState.SEARCHING -> "Mencari posisi GPS…" to MaterialTheme.colorScheme.onSurfaceVariant
+        state == GeoState.FAILED || geo == null -> "GPS tidak didapat. Nyalakan Lokasi HP, coba di dekat jendela." to MaterialTheme.colorScheme.error
+        geo.isMock -> "Terdeteksi lokasi palsu (fake GPS)." to MaterialTheme.colorScheme.error
+        !storeSet -> "Posisi ${GeoRule.formatCoord(geo.latitude, geo.longitude)}. Titik toko belum diatur di Pengaturan." to Amber
+        geo.inLocation -> "Di lokasi Indo HPL · ${GeoRule.formatDistance(geo.distanceMeters ?: 0)} dari titik toko" to Green
+        else -> "Di luar lokasi toko · ${GeoRule.formatDistance(geo.distanceMeters ?: 0)} dari titik toko" to MaterialTheme.colorScheme.error
+    }
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Filled.LocationOn, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(text, color = color, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+        if (state == GeoState.SEARCHING) {
+            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+        } else if (state == GeoState.FAILED || geo?.inLocation != true || !hasPermission) {
+            TextButton(onClick = onRetry) { Text("Coba lagi") }
+        }
+    }
+    if (required && geo?.inLocation != true) {
+        Text(
+            "Absen hanya bisa disimpan di lokasi toko.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
     }
 }
 

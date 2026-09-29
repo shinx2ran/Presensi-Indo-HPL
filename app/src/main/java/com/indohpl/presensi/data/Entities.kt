@@ -1,5 +1,6 @@
 package com.indohpl.presensi.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -39,6 +40,13 @@ data class AttendanceRecord(
     val lateMinutes: Int,        // menit keterlambatan (0 jika tepat)
     val photoPath: String?,      // path file selfie berstempel, null untuk IZIN/SAKIT
     val note: String = "",
+    // --- Lokasi GPS saat selfie (null jika tidak didapat / IZIN / SAKIT) ---
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val accuracy: Float? = null,          // akurasi GPS dalam meter
+    val distanceMeters: Int? = null,      // jarak ke titik toko, null jika titik toko belum diatur
+    @ColumnInfo(defaultValue = "0") val inLocation: Boolean = false, // true = dalam radius toko
+    @ColumnInfo(defaultValue = "") val locationNote: String = "",    // mis. "GPS tidak didapat", "lokasi palsu"
 )
 
 /** Tanggal libur (toko tutup) — tidak dihitung sebagai hari kerja. */

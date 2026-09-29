@@ -1,6 +1,7 @@
 package com.indohpl.presensi.data
 
 import android.content.Context
+import com.indohpl.presensi.domain.GeoCheck
 import com.indohpl.presensi.domain.LateRule
 import java.io.File
 import java.time.LocalDate
@@ -51,6 +52,7 @@ class Repository(context: Context) {
         employeeId: Long,
         capturedAt: LocalDateTime,
         photoPath: String,
+        geo: GeoCheck?,
     ): AttendanceRecord? {
         val date = capturedAt.toLocalDate().toString()
         if (attendanceDao.find(employeeId, date) != null) return null
@@ -64,6 +66,12 @@ class Repository(context: Context) {
             status = if (late > 0) Status.TELAT else Status.TEPAT,
             lateMinutes = late,
             photoPath = photoPath,
+            latitude = geo?.latitude,
+            longitude = geo?.longitude,
+            accuracy = geo?.accuracy,
+            distanceMeters = geo?.distanceMeters,
+            inLocation = geo?.inLocation ?: false,
+            locationNote = geo?.note ?: "GPS tidak didapat",
         )
         val id = attendanceDao.insert(rec)
         return rec.copy(id = id)
