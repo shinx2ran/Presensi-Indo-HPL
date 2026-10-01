@@ -78,6 +78,8 @@ dependencies {
     implementation(libs.firebase.auth)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.kotlinx.coroutines.play.services)
+    // Firestore membawa stub kosong "listenablefuture" yang menutupi kelas asli yang dipakai CameraX.
+    implementation(libs.guava)
 
     testImplementation(libs.junit)
 }
