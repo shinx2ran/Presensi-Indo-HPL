@@ -8,14 +8,15 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [Employee::class, AttendanceRecord::class, Holiday::class],
-    version = 2,
+    entities = [Employee::class, AttendanceRecord::class, Holiday::class, CloudDeletion::class],
+    version = 3,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun employeeDao(): EmployeeDao
     abstract fun attendanceDao(): AttendanceDao
     abstract fun holidayDao(): HolidayDao
+    abstract fun cloudDeletionDao(): CloudDeletionDao
 
     companion object {
         @Volatile private var instance: AppDatabase? = null
@@ -32,13 +33,21 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v2 -> v3: penanda sinkron cloud + antrean hapus. */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE attendance ADD COLUMN synced INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE TABLE IF NOT EXISTS cloud_deletions (docId TEXT NOT NULL, PRIMARY KEY(docId))")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "presensi.db",
-                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
             }
     }
 }

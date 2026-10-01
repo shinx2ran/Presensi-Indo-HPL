@@ -1,6 +1,7 @@
 package com.indohpl.presensi
 
 import android.app.Application
+import com.indohpl.presensi.cloud.CloudSync
 import com.indohpl.presensi.data.Repository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -17,5 +18,6 @@ class PresensiApp : Application() {
         super.onCreate()
         repository = Repository(this)
         appScope.launch { repository.ensureSeeded() }
+        CloudSync.schedulePeriodic(this)
     }
 }

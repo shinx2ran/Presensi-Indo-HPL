@@ -51,6 +51,30 @@ interface AttendanceDao {
 
     @Delete
     suspend fun delete(record: AttendanceRecord)
+
+    @Query("SELECT * FROM attendance WHERE synced = 0 ORDER BY timestamp")
+    suspend fun getUnsynced(): List<AttendanceRecord>
+
+    @Query("SELECT COUNT(*) FROM attendance WHERE synced = 0")
+    fun observeUnsyncedCount(): Flow<Int>
+
+    @Query("UPDATE attendance SET synced = 1 WHERE id = :id")
+    suspend fun markSynced(id: Long)
+
+    @Query("UPDATE attendance SET synced = 0")
+    suspend fun markAllUnsynced()
+}
+
+@Dao
+interface CloudDeletionDao {
+    @Query("SELECT * FROM cloud_deletions")
+    suspend fun getAll(): List<CloudDeletion>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(d: CloudDeletion)
+
+    @Delete
+    suspend fun delete(d: CloudDeletion)
 }
 
 @Dao

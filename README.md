@@ -77,6 +77,13 @@ Kalau ingin potongan tetap (misal Rp 10.000 per telat), isi angka itu di *Potong
 
 PIN owner (4–8 angka) dibuat saat tab Pengaturan pertama kali dibuka. Disimpan sebagai hash (tidak bisa dibaca dari file). Salah 5 kali = terkunci 30 detik. Pindah tab = terkunci lagi. PIN yang lupa hanya bisa direset dengan menghapus data aplikasi.
 
+## Sinkronisasi cloud (opsional, gratis)
+
+Aplikasi bisa mengirim setiap presensi (termasuk foto kecil) ke **Firebase Firestore** milik owner, paket Spark (gratis, tanpa kartu kredit).
+Owner memasang APK yang sama di HP-nya, memasukkan data Firebase yang sama, lalu di tab Rekap memilih sumber **Cloud**.
+Pengiriman berjalan di latar (WorkManager): kalau internet mati, antre dan dikirim ulang otomatis.
+Panduan lengkap langkah demi langkah: [docs/FIREBASE.md](docs/FIREBASE.md).
+
 ## Rekap & ekspor ke Claude
 
 Tab **Rekap** menampilkan per karyawan: hari kerja, hadir, tepat, telat, izin, sakit, alpa, total potongan, uang rajin.
@@ -123,6 +130,7 @@ app/src/main/java/com/indohpl/presensi/
 ├── PresensiApp.kt            Application: membuat Repository, seed karyawan
 ├── MainActivity.kt           FragmentActivity (dibutuhkan BiometricPrompt) + Compose
 ├── data/                     Room (Employee, AttendanceRecord, Holiday), DataStore settings, Repository
+├── cloud/                    CloudMapper (Firestore <-> record), FirebaseCloud (SDK), CloudSync (WorkManager)
 ├── domain/                   Logika murni Kotlin: LateRule, GeoRule (jarak/radius), BonusCalculator, RecapFormatter (diuji unit test)
 ├── ui/                       Compose: Beranda, Absen (biometrik+kamera), Rekap, Pengaturan
 └── util/                     Biometric, LocationHelper (GPS), PhotoStamper (stempel foto), Export (share/clipboard)

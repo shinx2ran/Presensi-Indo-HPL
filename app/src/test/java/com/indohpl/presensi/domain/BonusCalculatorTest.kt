@@ -247,3 +247,25 @@ class GeoRuleTest {
         assertTrue(csv.contains("2026-09-02,Sara,TEPAT,07:50:00,0,,,,,,,TIDAK,di luar lokasi"))
     }
 }
+
+class CloudMapperTest {
+    @Test
+    fun roundTrip() {
+        val r = AttendanceRecord(
+            id = 7, employeeId = 2, date = "2026-10-01", timestamp = 1_700_000_000_000L, timeIn = "07:50:12",
+            status = Status.TEPAT, lateMinutes = 0, photoPath = "/x/y.jpg", note = "", latitude = -6.1, longitude = 106.8,
+            accuracy = 12.5f, distanceMeters = 30, inLocation = true, locationNote = "di lokasi toko",
+        )
+        val m = com.indohpl.presensi.cloud.CloudMapper.toMap(r, "Riyanti", "QUJD", "Test")
+        assertEquals("2026-10-01_2", r.cloudId)
+        val back = com.indohpl.presensi.cloud.CloudMapper.fromMap(m)!!
+        assertEquals("Riyanti", back.employeeName)
+        assertEquals("QUJD", back.photoBase64)
+        assertEquals(r.copy(id = 0, photoPath = null, synced = true), back.record)
+    }
+
+    @Test
+    fun missingFieldsReturnNull() {
+        assertEquals(null, com.indohpl.presensi.cloud.CloudMapper.fromMap(mapOf("date" to "2026-10-01")))
+    }
+}

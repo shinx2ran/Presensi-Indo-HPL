@@ -74,6 +74,23 @@ object PhotoStamper {
         return target
     }
 
+    /** Versi kecil (maks 800 px, JPEG 70%) untuk disimpan di cloud. Sekitar 60–120 KB. */
+    fun compressForCloud(file: File, maxSide: Int = 800, quality: Int = 70): ByteArray? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        if (bounds.outWidth <= 0) return null
+        var sample = 1
+        while (bounds.outWidth / sample > maxSide * 2 || bounds.outHeight / sample > maxSide * 2) sample *= 2
+        val bmp = BitmapFactory.decodeFile(file.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
+        val scale = (maxSide.toFloat() / maxOf(bmp.width, bmp.height)).coerceAtMost(1f)
+        val scaled = if (scale < 1f) Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), (bmp.height * scale).toInt(), true) else bmp
+        val out = java.io.ByteArrayOutputStream()
+        scaled.compress(Bitmap.CompressFormat.JPEG, quality, out)
+        if (scaled !== bmp) scaled.recycle()
+        bmp.recycle()
+        return out.toByteArray()
+    }
+
     /** Decode dengan downsampling agar hemat memori, lalu putar sesuai EXIF supaya tegak. */
     private fun decodeScaledUpright(file: File): Bitmap {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }

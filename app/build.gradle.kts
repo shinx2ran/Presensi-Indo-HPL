@@ -73,5 +73,11 @@ dependencies {
     implementation(libs.androidx.exifinterface)
     implementation(libs.play.services.location)
 
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.firestore)
+    implementation(libs.firebase.auth)
+    implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.kotlinx.coroutines.play.services)
+
     testImplementation(libs.junit)
 }

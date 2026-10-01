@@ -185,6 +185,10 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
+            CloudSection(repository, onMessage)
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
             Text("Aturan jam masuk", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
                 "Datang lewat dari jam masuk + toleransi = telat. Menit telat dihitung dari jam masuk.",

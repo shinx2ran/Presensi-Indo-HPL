@@ -53,6 +53,19 @@ data class AppSettings(
     )
 }
 
+/** Konfigurasi Firebase yang dimasukkan owner lewat Pengaturan (tanpa file google-services.json). */
+data class CloudConfig(
+    val enabled: Boolean = false,
+    val projectId: String = "",
+    val appId: String = "",       // mobilesdk_app_id, format 1:1234567890:android:abcdef
+    val apiKey: String = "",      // current_key
+    val email: String = "",       // akun login Firebase Authentication (email/password)
+    val password: String = "",
+) {
+    val isComplete: Boolean
+        get() = projectId.isNotBlank() && appId.isNotBlank() && apiKey.isNotBlank() && email.isNotBlank() && password.isNotBlank()
+}
+
 class SettingsStore(private val context: Context) {
     private object Keys {
         val WORK_START_F = stringPreferencesKey("work_start_f")
@@ -67,8 +80,40 @@ class SettingsStore(private val context: Context) {
         val STORE_LON = doublePreferencesKey("store_lon")
         val RADIUS = intPreferencesKey("radius_meters")
         val REQUIRE_LOCATION = booleanPreferencesKey("require_location")
+        val CLOUD_ENABLED = booleanPreferencesKey("cloud_enabled")
+        val CLOUD_PROJECT = stringPreferencesKey("cloud_project_id")
+        val CLOUD_APP_ID = stringPreferencesKey("cloud_app_id")
+        val CLOUD_API_KEY = stringPreferencesKey("cloud_api_key")
+        val CLOUD_EMAIL = stringPreferencesKey("cloud_email")
+        val CLOUD_PASSWORD = stringPreferencesKey("cloud_password")
         val PIN_HASH = stringPreferencesKey("owner_pin_hash")
         val PIN_SALT = stringPreferencesKey("owner_pin_salt")
+    }
+
+    // ---------- Cloud (Firebase) ----------
+
+    val cloud: Flow<CloudConfig> = context.dataStore.data.map { p ->
+        CloudConfig(
+            enabled = p[Keys.CLOUD_ENABLED] ?: false,
+            projectId = p[Keys.CLOUD_PROJECT] ?: "",
+            appId = p[Keys.CLOUD_APP_ID] ?: "",
+            apiKey = p[Keys.CLOUD_API_KEY] ?: "",
+            email = p[Keys.CLOUD_EMAIL] ?: "",
+            password = p[Keys.CLOUD_PASSWORD] ?: "",
+        )
+    }
+
+    suspend fun currentCloud(): CloudConfig = cloud.first()
+
+    suspend fun saveCloud(c: CloudConfig) {
+        context.dataStore.edit { p ->
+            p[Keys.CLOUD_ENABLED] = c.enabled
+            p[Keys.CLOUD_PROJECT] = c.projectId.trim()
+            p[Keys.CLOUD_APP_ID] = c.appId.trim()
+            p[Keys.CLOUD_API_KEY] = c.apiKey.trim()
+            p[Keys.CLOUD_EMAIL] = c.email.trim()
+            p[Keys.CLOUD_PASSWORD] = c.password
+        }
     }
 
     // ---------- PIN owner (pengaman tab Pengaturan) ----------

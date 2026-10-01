@@ -47,7 +47,15 @@ data class AttendanceRecord(
     val distanceMeters: Int? = null,      // jarak ke titik toko, null jika titik toko belum diatur
     @ColumnInfo(defaultValue = "0") val inLocation: Boolean = false, // true = dalam radius toko
     @ColumnInfo(defaultValue = "") val locationNote: String = "",    // mis. "GPS tidak didapat", "lokasi palsu"
-)
+    @ColumnInfo(defaultValue = "0") val synced: Boolean = false,     // sudah terkirim ke cloud (Firestore)
+) {
+    /** ID dokumen di cloud: satu per karyawan per tanggal, sama dengan index unik lokal. */
+    val cloudId: String get() = "${date}_$employeeId"
+}
+
+/** Antrean penghapusan di cloud (dokumen yang sudah dihapus lokal tapi belum terhapus di Firestore). */
+@Entity(tableName = "cloud_deletions")
+data class CloudDeletion(@PrimaryKey val docId: String)
 
 /** Tanggal libur (toko tutup) — tidak dihitung sebagai hari kerja. */
 @Entity(tableName = "holidays")

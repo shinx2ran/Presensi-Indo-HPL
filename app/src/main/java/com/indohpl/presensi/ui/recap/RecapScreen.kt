@@ -30,12 +30,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -48,7 +50,10 @@ import com.indohpl.presensi.domain.EmployeeRecap
 import com.indohpl.presensi.domain.RecapFormatter
 import com.indohpl.presensi.ui.Avatar
 import com.indohpl.presensi.ui.PhotoDialog
+import com.indohpl.presensi.ui.SourceChips
 import com.indohpl.presensi.ui.StatusPill
+import com.indohpl.presensi.ui.cloudPhotoToFile
+import com.indohpl.presensi.ui.loadCloudMonth
 import com.indohpl.presensi.ui.shortLabel
 import com.indohpl.presensi.ui.theme.Green
 import java.time.LocalDate
@@ -57,11 +62,27 @@ import java.time.YearMonth
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecapScreen(repository: Repository) {
+    val context = LocalContext.current
     var month by remember { mutableStateOf(YearMonth.now()) }
     val today = LocalDate.now()
 
     val employees by repository.observeEmployees().collectAsStateWithLifecycle(emptyList())
-    val records by remember(month) { repository.observeMonth(month) }.collectAsStateWithLifecycle(emptyList())
+    val localRecords by remember(month) { repository.observeMonth(month) }.collectAsStateWithLifecycle(emptyList())
+    val cloudConfig by repository.settingsStore.cloud.collectAsStateWithLifecycle(null)
+    val cloudAvailable = cloudConfig?.let { it.enabled && it.isComplete } == true
+    var useCloud by remember { mutableStateOf(false) }
+    var cloudRecords by remember { mutableStateOf<List<AttendanceRecord>>(emptyList()) }
+    var cloudPhotos by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var cloudError by remember { mutableStateOf<String?>(null) }
+    var cloudLoading by remember { mutableStateOf(false) }
+    LaunchedEffect(useCloud, month) {
+        if (!useCloud) return@LaunchedEffect
+        cloudLoading = true
+        val m = loadCloudMonth(context, repository, month)
+        cloudRecords = m.records; cloudPhotos = m.photos; cloudError = m.error
+        cloudLoading = false
+    }
+    val records = if (useCloud) cloudRecords else localRecords
     val holidays by repository.observeHolidays().collectAsStateWithLifecycle(emptyList())
     val settings by repository.settingsStore.settings.collectAsStateWithLifecycle(AppSettings())
 
@@ -104,6 +125,13 @@ fun RecapScreen(repository: Repository) {
                     }
                 }
             }
+            if (cloudAvailable) {
+                item {
+                    SourceChips(useCloud = useCloud, onChange = { useCloud = it })
+                    if (useCloud && cloudLoading) Text("Memuat data cloud…", style = MaterialTheme.typography.bodySmall)
+                    cloudError?.takeIf { useCloud }?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                }
+            }
             item {
                 val perDay = recaps.firstOrNull()?.deductionPerDay ?: 0L
                 val workDays = recaps.firstOrNull()?.workDaysInMonth ?: 0
@@ -133,7 +161,11 @@ fun RecapScreen(repository: Repository) {
                 RecapCard(
                     recap = r,
                     records = records.filter { it.employeeId == r.employee.id }.sortedByDescending { it.date },
+                    cloudPhotos = if (useCloud) cloudPhotos else emptyMap(),
                     onShowPhoto = { path, title -> photoToShow = path to title },
+                    onShowCloudPhoto = { rec, title ->
+                        cloudPhotos[rec.cloudId]?.let { b64 -> photoToShow = cloudPhotoToFile(context, rec.cloudId, b64) to title }
+                    },
                 )
             }
             item {
@@ -157,7 +189,9 @@ fun RecapScreen(repository: Repository) {
 private fun RecapCard(
     recap: EmployeeRecap,
     records: List<AttendanceRecord>,
+    cloudPhotos: Map<String, String>,
     onShowPhoto: (String, String) -> Unit,
+    onShowCloudPhoto: (AttendanceRecord, String) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Card(elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) {
@@ -207,7 +241,13 @@ private fun RecapCard(
                     records.forEach { rec ->
                         Row(
                             Modifier.fillMaxWidth().padding(vertical = 8.dp)
-                                .then(if (rec.photoPath != null) Modifier.clickable { onShowPhoto(rec.photoPath, "${recap.employee.name} · ${rec.date} ${rec.timeIn}") } else Modifier),
+                                .then(
+                                    when {
+                                        rec.photoPath != null -> Modifier.clickable { onShowPhoto(rec.photoPath, "${recap.employee.name} · ${rec.date} ${rec.timeIn}") }
+                                        cloudPhotos.containsKey(rec.cloudId) -> Modifier.clickable { onShowCloudPhoto(rec, "${recap.employee.name} · ${rec.date} ${rec.timeIn}") }
+                                        else -> Modifier
+                                    },
+                                ),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(LocalDate.parse(rec.date).shortLabel(), Modifier.width(96.dp), style = MaterialTheme.typography.bodyMedium)
