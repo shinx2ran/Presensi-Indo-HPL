@@ -81,11 +81,12 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
     val scope = rememberCoroutineScope()
     val saved by repository.settingsStore.settings.collectAsStateWithLifecycle(null)
     val holidays by repository.observeHolidays().collectAsStateWithLifecycle(emptyList())
-    val employees by repository.observeEmployees().collectAsStateWithLifecycle(emptyList())
+    val employees by repository.observeEmployees().collectAsStateWithLifecycle(null)
 
     /** "Perempuan (Inul, Bik Nia)" — nama diambil dari daftar karyawan aktif, bukan ditulis mati. */
     fun genderLabel(title: String, gender: String): String {
-        val names = employees.filter { it.active && it.gender == gender }.map { it.name }
+        val list = employees ?: return title // daftar belum termuat dari database: tampilkan judul saja
+        val names = list.filter { it.active && it.gender == gender }.map { it.name }
         return if (names.isEmpty()) "$title (belum ada karyawan)" else "$title (${names.joinToString(", ")})"
     }
 
