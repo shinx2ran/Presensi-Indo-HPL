@@ -151,7 +151,7 @@ Repo ini sengaja tidak menyertakan `gradlew` (file biner wrapper). Kalau perlu, 
 * **Layar Absen hanya menampilkan "Memuat…"** (versi ≤ 1.1.0): HP belum punya kunci layar sehingga biometrik tidak tersedia, dan pesannya tidak tampil. Sejak 1.1.1 pesannya terlihat; solusinya pasang kunci layar di HP, atau matikan **Wajib biometrik** di Pengaturan (owner).
 * **Waktu** diambil dari jam HP presensi. Pastikan *Tanggal & waktu otomatis* aktif.
 * **Data** (database + foto) tersimpan di folder privat aplikasi. Menghapus aplikasi = menghapus data. Ekspor rekap setiap akhir bulan.
-* **GPS di dalam ruangan** bisa lambat/tidak akurat. Aplikasi menunggu sampai 25 detik dan memakai akurasi GPS sebagai toleransi. Kalau sering gagal, besarkan radius atau matikan saklar "Wajib di lokasi toko" / "Wajib di lokasi kost".
+* **GPS di dalam ruangan** bisa lambat/tidak akurat, terutama di HP kelas murah. Aplikasi memakai posisi pertama yang didapat (biasanya dari jaringan dalam 1–3 detik), terus memperbaikinya sampai akurat (≤ 30 m) atau maksimal 40 detik, dan memakai akurasi sebagai toleransi jarak. Kalau tetap gagal, nyalakan Wi-Fi (membantu penentuan posisi walau tidak tersambung), besarkan radius, atau matikan saklar "Wajib di lokasi toko" / "Wajib di lokasi kost".
 * Butuh HP dengan **Google Play Services** (hampir semua HP Android di Indonesia).
 * Minimal Android 8.0 (API 26).
 

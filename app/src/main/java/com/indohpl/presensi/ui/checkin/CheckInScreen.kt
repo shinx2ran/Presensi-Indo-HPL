@@ -492,7 +492,7 @@ private fun LocationStatus(
     val (text, color) = when {
         !hasPermission -> "Izin lokasi belum diberikan." to MaterialTheme.colorScheme.error
         state == GeoState.IDLE || state == GeoState.SEARCHING -> "Mencari posisi GPS…" to MaterialTheme.colorScheme.onSurfaceVariant
-        state == GeoState.FAILED || geo == null -> "GPS tidak didapat. Nyalakan Lokasi HP, coba di dekat jendela." to MaterialTheme.colorScheme.error
+        state == GeoState.FAILED || geo == null -> "Posisi tidak didapat. Nyalakan Lokasi HP (mode akurasi tinggi) dan Wi-Fi, coba di dekat jendela." to MaterialTheme.colorScheme.error
         geo.isMock -> "Terdeteksi lokasi palsu (fake GPS)." to MaterialTheme.colorScheme.error
         !storeSet -> "Posisi ${GeoRule.formatCoord(geo.latitude, geo.longitude)}. Titik ${Site.place} belum diatur di Pengaturan." to Amber
         geo.inLocation -> "Di lokasi ${Site.name} · ${GeoRule.formatDistance(geo.distanceMeters ?: 0)} dari titik ${Site.place}" to Green

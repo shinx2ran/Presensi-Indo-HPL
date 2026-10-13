@@ -48,7 +48,12 @@ fun CameraPreview(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val previewView = remember {
-        PreviewView(context).apply { scaleType = PreviewView.ScaleType.FILL_CENTER }
+        PreviewView(context).apply {
+            scaleType = PreviewView.ScaleType.FILL_CENTER
+            // COMPATIBLE (TextureView) paling aman lintas perangkat: mode PERFORMANCE (SurfaceView)
+            // di sebagian HP MediaTek murah (Infinix/Tecno) menampilkan pratinjau hitam.
+            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+        }
     }
 
     LaunchedEffect(lensFacing) {
