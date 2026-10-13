@@ -15,7 +15,7 @@ Satu basis kode menghasilkan **dua aplikasi terpisah** (dua *product flavor* Gra
 | Jam masuk bawaan | Perempuan 07:45 (+10 mnt) · Laki-laki 08:00 (+5 mnt) | **07:30** (+10 mnt) untuk semua |
 | Unduh APK | [PresensiIndoHPL.apk](https://github.com/shinx2ran/Presensi-Indo-HPL/raw/apk-build/PresensiIndoHPL.apk) | [PresensiEGKost.apk](https://github.com/shinx2ran/Presensi-Indo-HPL/raw/apk-build/PresensiEGKost.apk) |
 
-Semua konfigurasi yang membedakan keduanya ada di satu berkas per varian: `app/src/indohpl/java/com/indohpl/presensi/Site.kt` dan `app/src/egkost/java/com/indohpl/presensi/Site.kt` (nama, karyawan awal, jam masuk bawaan, teks "toko"/"kost").
+Konfigurasi tempat kerja ada di satu berkas per varian: `app/src/indohpl/java/com/indohpl/presensi/Site.kt` dan `app/src/egkost/java/com/indohpl/presensi/Site.kt` (nama, karyawan awal, jam masuk bawaan, teks "toko"/"kost"). Selain itu tiap varian punya `res/values/strings.xml` (nama aplikasi), `res/values/colors.xml` (warna ikon), dan `applicationId` di `app/build.gradle.kts`.
 
 ## Karyawan
 
@@ -38,7 +38,7 @@ Daftar ini di-seed otomatis setiap aplikasi dibuka (`Repository.ensureSeeded` me
 | Inul    | Laundry | P      |
 | Bik Nia | Kos     | P      |
 
-Bagian kerja ditampilkan di bawah nama (Beranda, Rekap, stempel foto). Menambah karyawan = menambah satu baris di `Site.kt` varian yang bersangkutan (pakai `id` baru yang belum terpakai), lalu push: APK baru otomatis dibangun, dan saat aplikasi dibuka karyawan baru langsung ditambahkan ke database HP yang sudah terpasang (karyawan yang sudah ada tidak diubah).
+Bagian kerja ditampilkan di bawah nama di Beranda, dan sebagai "Nama · Bagian" di Rekap, stempel foto, serta tabel ringkasan Markdown. Menambah karyawan = menambah satu baris di `Site.kt` varian yang bersangkutan (pakai `id` baru yang belum terpakai), lalu push: APK baru otomatis dibangun, dan saat aplikasi dibuka karyawan baru langsung ditambahkan ke database HP yang sudah terpasang (karyawan yang sudah ada tidak diubah).
 
 ## Alur presensi
 
