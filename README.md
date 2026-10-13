@@ -66,6 +66,7 @@ Beranda ──tap "Absen"──▶ [1] Biometrik HP presensi ──▶ [2] Selfi
 
   Menit telat dihitung dari jam masuk (di EG Kost datang 07:41 = telat 11 menit). Kalau aturan perempuan dan laki-laki sama, aplikasi menampilkannya sebagai satu aturan saja.
 * Hanya **jam masuk** yang dicatat, tidak ada check-out.
+* Langkah biometrik memakai kunci layar HP (sidik jari / wajah / PIN). Kalau HP presensi **tidak punya kunci layar**, aplikasi menampilkan pesan dengan tombol "Coba lagi"; owner bisa mematikan saklar **Pengaturan → Verifikasi sebelum selfie → Wajib biometrik** supaya absen langsung ke selfie.
 * Pemegang HP bisa menandai **Izin** / **Sakit** dari menu ⋮ di kartu karyawan (tanpa selfie, tidak dipotong).
 * Menu ⋮ juga bisa **Lihat foto** dan **Hapus catatan hari ini** (untuk salah tekan).
 
@@ -98,7 +99,7 @@ Kalau ingin potongan tetap (misal Rp 10.000 per telat), isi angka itu di *Potong
 |---|---|---|
 | Beranda | pemegang HP (kasir / penjaga kost) | absen, tandai izin/sakit, lihat foto, hapus salah tekan |
 | Rekap | pemegang HP & owner | **hanya melihat** rekap bulanan, tidak ada tombol ubah/ekspor |
-| Pengaturan | **owner, dikunci PIN** | aturan jam, uang rajin, lokasi kerja, hari libur, ekspor rekap, ganti PIN |
+| Pengaturan | **owner, dikunci PIN** | aturan jam, uang rajin, wajib biometrik, lokasi kerja, hari libur, ekspor rekap, ganti PIN |
 
 PIN owner (4–8 angka) dibuat saat tab Pengaturan pertama kali dibuka. Disimpan sebagai hash (tidak bisa dibaca dari file). Salah 5 kali = terkunci 30 detik. Pindah tab = terkunci lagi. PIN yang lupa hanya bisa direset dengan menghapus data aplikasi.
 
@@ -147,6 +148,7 @@ Repo ini sengaja tidak menyertakan `gradlew` (file biner wrapper). Kalau perlu, 
 ## Yang perlu diketahui
 
 * **Biometrik**: memakai sidik jari / wajah / PIN yang terdaftar di HP presensi. Android **tidak memberi tahu aplikasi sidik jari siapa** yang dipakai, jadi biometrik hanya gerbang "presensi dilakukan di HP ini dengan persetujuan". Bukti identitas utamanya adalah **selfie**. Kalau ingin, daftarkan sidik jari tiap karyawan di HP itu (Android biasanya mengizinkan sampai 5 jari).
+* **Layar Absen hanya menampilkan "Memuat…"** (versi ≤ 1.1.0): HP belum punya kunci layar sehingga biometrik tidak tersedia, dan pesannya tidak tampil. Sejak 1.1.1 pesannya terlihat; solusinya pasang kunci layar di HP, atau matikan **Wajib biometrik** di Pengaturan (owner).
 * **Waktu** diambil dari jam HP presensi. Pastikan *Tanggal & waktu otomatis* aktif.
 * **Data** (database + foto) tersimpan di folder privat aplikasi. Menghapus aplikasi = menghapus data. Ekspor rekap setiap akhir bulan.
 * **GPS di dalam ruangan** bisa lambat/tidak akurat. Aplikasi menunggu sampai 25 detik dan memakai akurasi GPS sebagai toleransi. Kalau sering gagal, besarkan radius atau matikan saklar "Wajib di lokasi toko" / "Wajib di lokasi kost".

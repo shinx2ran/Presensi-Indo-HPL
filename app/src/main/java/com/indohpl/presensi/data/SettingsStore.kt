@@ -37,6 +37,8 @@ data class AppSettings(
     val storeLon: Double? = null,
     val radiusMeters: Int = 100,              // radius toleransi dari titik lokasi
     val requireLocation: Boolean = true,      // true = absen ditolak jika di luar radius / GPS tidak ada
+    // --- Verifikasi ---
+    val requireBiometric: Boolean = true,     // true = sidik jari/wajah/PIN HP wajib sebelum selfie; matikan bila HP tanpa kunci layar
 ) {
     val hasStoreLocation: Boolean get() = storeLat != null && storeLon != null
 
@@ -96,6 +98,7 @@ class SettingsStore(private val context: Context) {
         val STORE_LON = doublePreferencesKey("store_lon")
         val RADIUS = intPreferencesKey("radius_meters")
         val REQUIRE_LOCATION = booleanPreferencesKey("require_location")
+        val REQUIRE_BIOMETRIC = booleanPreferencesKey("require_biometric")
         val CLOUD_ENABLED = booleanPreferencesKey("cloud_enabled")
         val CLOUD_PROJECT = stringPreferencesKey("cloud_project_id")
         val CLOUD_APP_ID = stringPreferencesKey("cloud_app_id")
@@ -180,6 +183,7 @@ class SettingsStore(private val context: Context) {
             }
             p[Keys.RADIUS] = s.radiusMeters
             p[Keys.REQUIRE_LOCATION] = s.requireLocation
+            p[Keys.REQUIRE_BIOMETRIC] = s.requireBiometric
         }
     }
 
@@ -204,6 +208,7 @@ class SettingsStore(private val context: Context) {
             storeLon = this[Keys.STORE_LON],
             radiusMeters = this[Keys.RADIUS] ?: d.radiusMeters,
             requireLocation = this[Keys.REQUIRE_LOCATION] ?: d.requireLocation,
+            requireBiometric = this[Keys.REQUIRE_BIOMETRIC] ?: d.requireBiometric,
         )
     }
 }

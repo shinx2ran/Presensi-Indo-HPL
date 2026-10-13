@@ -101,6 +101,7 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
     var storeLatLon by remember { mutableStateOf("") }      // "lat, lon"
     var radius by remember { mutableStateOf("100") }
     var requireLocation by remember { mutableStateOf(true) }
+    var requireBiometric by remember { mutableStateOf(true) }
     var locating by remember { mutableStateOf(false) }
     var loaded by remember { mutableStateOf(false) }
 
@@ -138,6 +139,7 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
             storeLatLon = if (s.storeLat != null && s.storeLon != null) GeoRule.formatCoord(s.storeLat, s.storeLon) else ""
             radius = s.radiusMeters.toString()
             requireLocation = s.requireLocation
+            requireBiometric = s.requireBiometric
             loaded = true
         }
     }
@@ -176,6 +178,7 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
                     storeLon = latLon?.second,
                     radiusMeters = rad,
                     requireLocation = requireLocation,
+                    requireBiometric = requireBiometric,
                 ),
             )
             onMessage("Pengaturan disimpan")
@@ -267,6 +270,18 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
                 }
                 Switch(checked = deductAbsent, onCheckedChange = { deductAbsent = it })
             }
+            Text("Verifikasi sebelum selfie", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f)) {
+                    Text("Wajib biometrik")
+                    Text(
+                        "Aktif: sidik jari / wajah / PIN ${Site.device} diminta sebelum selfie. Matikan hanya jika ${Site.device} tidak punya kunci layar; selfie berstempel waktu + GPS tetap menjadi bukti utama.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = requireBiometric, onCheckedChange = { requireBiometric = it })
+            }
+
             Text("Lokasi ${Site.placeFull}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
                 "Selfie hanya sah bila HP berada dalam radius ini dari titik ${Site.place}. Ambil titiknya sambil berdiri di dalam ${Site.place}, atau salin koordinat dari Google Maps (tekan lama lokasi → angka di atas).",

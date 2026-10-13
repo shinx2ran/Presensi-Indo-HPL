@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -163,29 +164,36 @@ fun CheckInScreen(
     val locationRequired = settings.requireLocation && settings.hasStoreLocation
     val canCapture = !locationRequired || (geo?.inLocation == true)
 
+    /** Langkah 2: buka kamera (minta izin kamera + lokasi sekaligus bila belum ada). */
+    fun startCamera() {
+        error = null
+        step = Step.CAMERA
+        if (!hasCameraPermission || !hasLocationPermission) permissionLauncher.launch(allPermissions)
+    }
+
     fun runBiometric() {
         val emp = employee ?: return
+        // Pindah ke layar langkah 1 DULU: kalau biometrik tidak bisa dipakai, pesannya tampil di sini
+        // (bukan spinner "Memuat…" tanpa akhir seperti sebelumnya).
+        step = Step.BIOMETRIC
         val activity = context.findFragmentActivity()
         if (activity == null) {
             error = "Tidak bisa membuka verifikasi biometrik."
             return
         }
         Biometric.availabilityProblem(context)?.let {
-            error = it
+            error = "$it\n\nKalau ${Site.device} memang tidak memakai kunci layar, owner bisa mematikan " +
+                "\"Wajib biometrik\" di Pengaturan; selfie berstempel tetap jadi bukti presensi."
             return
         }
         error = null
-        step = Step.BIOMETRIC
         Biometric.authenticate(
             activity = activity,
             title = "Verifikasi presensi",
             subtitle = "Absen masuk: ${emp.name}",
         ) { result ->
             when (result) {
-                BiometricResult.Success -> {
-                    step = Step.CAMERA
-                    if (!hasCameraPermission || !hasLocationPermission) permissionLauncher.launch(allPermissions)
-                }
+                BiometricResult.Success -> startCamera()
                 is BiometricResult.Failed -> error = "Verifikasi gagal: ${result.message}"
             }
         }
@@ -194,14 +202,16 @@ fun CheckInScreen(
     LaunchedEffect(employeeId) {
         employee = repository.employeeDao.getById(employeeId)
         if (employee == null) {
-            error = "Karyawan tidak ditemukan."
+            error = "Karyawan tidak ditemukan. Tutup layar ini dan coba lagi dari Beranda."
         } else {
             // Cek dulu apakah sudah absen hari ini.
             val existing = repository.attendanceDao.find(employeeId, java.time.LocalDate.now().toString())
             if (existing != null) {
                 onFinished("${employee!!.name} sudah absen hari ini (${existing.status}${if (existing.timeIn.isNotEmpty()) " " + existing.timeIn.take(5) else ""}).")
-            } else {
+            } else if (repository.settingsStore.current().requireBiometric) {
                 runBiometric()
+            } else {
+                startCamera() // owner mematikan biometrik (HP tanpa kunci layar): langsung selfie
             }
         }
     }
@@ -298,9 +308,18 @@ fun CheckInScreen(
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (step) {
                 Step.LOADING, Step.PROCESSING -> Centered {
-                    CircularProgressIndicator()
-                    Spacer(Modifier.height(16.dp))
-                    Text(if (step == Step.LOADING) "Memuat…" else "Memproses foto…")
+                    val err = error
+                    if (step == Step.LOADING && err != null) {
+                        Icon(Icons.Filled.Warning, null, Modifier.size(72.dp), tint = MaterialTheme.colorScheme.error)
+                        Spacer(Modifier.height(16.dp))
+                        Text(err, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
+                        Spacer(Modifier.height(16.dp))
+                        Button(onClick = onCancel) { Text("Kembali") }
+                    } else {
+                        CircularProgressIndicator()
+                        Spacer(Modifier.height(16.dp))
+                        Text(if (step == Step.LOADING) "Memuat…" else "Memproses foto…")
+                    }
                 }
 
                 Step.BIOMETRIC -> Centered {
