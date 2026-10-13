@@ -147,7 +147,7 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
 
     fun save() {
         if (LateRule.parseWorkStart(workStartF) == null || LateRule.parseWorkStart(workStartM) == null) {
-            onMessage("Jam masuk harus format HH:mm, contoh 07:45"); return
+            onMessage("Jam masuk harus format HH:mm, contoh ${Site.workStartFemale}"); return
         }
         val tolF = toleranceF.trim().toIntOrNull()
         val tolM = toleranceM.trim().toIntOrNull()

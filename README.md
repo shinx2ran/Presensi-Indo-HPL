@@ -149,7 +149,7 @@ Repo ini sengaja tidak menyertakan `gradlew` (file biner wrapper). Kalau perlu, 
 * **Biometrik**: memakai sidik jari / wajah / PIN yang terdaftar di HP presensi. Android **tidak memberi tahu aplikasi sidik jari siapa** yang dipakai, jadi biometrik hanya gerbang "presensi dilakukan di HP ini dengan persetujuan". Bukti identitas utamanya adalah **selfie**. Kalau ingin, daftarkan sidik jari tiap karyawan di HP itu (Android biasanya mengizinkan sampai 5 jari).
 * **Waktu** diambil dari jam HP presensi. Pastikan *Tanggal & waktu otomatis* aktif.
 * **Data** (database + foto) tersimpan di folder privat aplikasi. Menghapus aplikasi = menghapus data. Ekspor rekap setiap akhir bulan.
-* **GPS di dalam ruangan** bisa lambat/tidak akurat. Aplikasi menunggu sampai 25 detik dan memakai akurasi GPS sebagai toleransi. Kalau sering gagal, besarkan radius atau matikan "Wajib di lokasi toko".
+* **GPS di dalam ruangan** bisa lambat/tidak akurat. Aplikasi menunggu sampai 25 detik dan memakai akurasi GPS sebagai toleransi. Kalau sering gagal, besarkan radius atau matikan saklar "Wajib di lokasi toko" / "Wajib di lokasi kost".
 * Butuh HP dengan **Google Play Services** (hampir semua HP Android di Indonesia).
 * Minimal Android 8.0 (API 26).
 
