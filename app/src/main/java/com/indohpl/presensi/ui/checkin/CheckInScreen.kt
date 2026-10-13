@@ -132,8 +132,11 @@ fun CheckInScreen(
     val settings by repository.settingsStore.settings.collectAsStateWithLifecycle(AppSettings())
     var geoState by remember { mutableStateOf(GeoState.IDLE) }
     var geo by remember { mutableStateOf<GeoCheck?>(null) }
+    var geoRefining by remember { mutableStateOf(false) } // posisi sudah ada, akurasi masih diperbaiki
 
     // Cari posisi setiap kali masuk langkah kamera (dan setiap "Coba lagi").
+    // Posisi pertama langsung dipakai (tombol jepret aktif bila di dalam radius); fix yang lebih akurat
+    // menyusul dan memperbarui tampilan sampai aliran selesai (akurasi <= 30 m atau 40 detik).
     LaunchedEffect(step, geoAttempt, hasLocationPermission) {
         if (step != Step.CAMERA) return@LaunchedEffect
         if (!hasLocationPermission) {
@@ -141,22 +144,29 @@ fun CheckInScreen(
             return@LaunchedEffect
         }
         geoState = GeoState.SEARCHING
-        val loc = LocationHelper.current(context)
-        if (loc == null) {
+        geoRefining = true
+        var found = false
+        try {
+            LocationHelper.updates(context).collect { loc ->
+                found = true
+                geo = GeoRule.check(
+                    latitude = loc.latitude,
+                    longitude = loc.longitude,
+                    accuracy = if (loc.hasAccuracy()) loc.accuracy else null,
+                    isMock = LocationHelper.isMock(loc),
+                    storeLat = settings.storeLat,
+                    storeLon = settings.storeLon,
+                    radiusMeters = settings.radiusMeters,
+                    place = Site.place,
+                )
+                geoState = GeoState.FOUND
+            }
+        } finally {
+            geoRefining = false
+        }
+        if (!found) {
             geo = null
             geoState = GeoState.FAILED
-        } else {
-            geo = GeoRule.check(
-                latitude = loc.latitude,
-                longitude = loc.longitude,
-                accuracy = if (loc.hasAccuracy()) loc.accuracy else null,
-                isMock = LocationHelper.isMock(loc),
-                storeLat = settings.storeLat,
-                storeLon = settings.storeLon,
-                radiusMeters = settings.radiusMeters,
-                place = Site.place,
-            )
-            geoState = GeoState.FOUND
         }
     }
 
@@ -376,6 +386,7 @@ fun CheckInScreen(
                             LocationStatus(
                                 state = geoState,
                                 geo = geo,
+                                refining = geoRefining,
                                 hasPermission = hasLocationPermission,
                                 storeSet = settings.hasStoreLocation,
                                 required = locationRequired,
@@ -484,6 +495,7 @@ fun CheckInScreen(
 private fun LocationStatus(
     state: GeoState,
     geo: GeoCheck?,
+    refining: Boolean,
     hasPermission: Boolean,
     storeSet: Boolean,
     required: Boolean,
@@ -495,8 +507,8 @@ private fun LocationStatus(
         state == GeoState.FAILED || geo == null -> "Posisi tidak didapat. Nyalakan Lokasi HP (mode akurasi tinggi) dan Wi-Fi, coba di dekat jendela." to MaterialTheme.colorScheme.error
         geo.isMock -> "Terdeteksi lokasi palsu (fake GPS)." to MaterialTheme.colorScheme.error
         !storeSet -> "Posisi ${GeoRule.formatCoord(geo.latitude, geo.longitude)}. Titik ${Site.place} belum diatur di Pengaturan." to Amber
-        geo.inLocation -> "Di lokasi ${Site.name} · ${GeoRule.formatDistance(geo.distanceMeters ?: 0)} dari titik ${Site.place}" to Green
-        else -> "Di luar lokasi ${Site.place} · ${GeoRule.formatDistance(geo.distanceMeters ?: 0)} dari titik ${Site.place}" to MaterialTheme.colorScheme.error
+        geo.inLocation -> "Di lokasi ${Site.name} · ${GeoRule.formatDistance(geo.distanceMeters ?: 0)} dari titik ${Site.place}" + accuracySuffix(geo, refining) to Green
+        else -> "Di luar lokasi ${Site.place} · ${GeoRule.formatDistance(geo.distanceMeters ?: 0)} dari titik ${Site.place}" + accuracySuffix(geo, refining) to MaterialTheme.colorScheme.error
     }
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -505,7 +517,7 @@ private fun LocationStatus(
         Icon(Icons.Filled.LocationOn, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(6.dp))
         Text(text, color = color, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-        if (state == GeoState.SEARCHING) {
+        if (state == GeoState.SEARCHING || (state == GeoState.FOUND && refining)) {
             CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
         } else if (state == GeoState.FAILED || geo?.inLocation != true || !hasPermission) {
             TextButton(onClick = onRetry) { Text("Coba lagi") }
@@ -519,6 +531,12 @@ private fun LocationStatus(
             modifier = Modifier.padding(horizontal = 16.dp),
         )
     }
+}
+
+/** " (±120 m, memperbaiki…)" selama akurasi masih diperbaiki, " (±12 m)" setelah selesai. */
+private fun accuracySuffix(geo: GeoCheck, refining: Boolean): String {
+    val acc = geo.accuracy?.toInt() ?: return if (refining) " (memperbaiki akurasi…)" else ""
+    return if (refining) " (±$acc m, memperbaiki…)" else " (±$acc m)"
 }
 
 @Composable
