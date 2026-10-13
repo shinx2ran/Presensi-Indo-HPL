@@ -10,7 +10,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 @Database(
     entities = [Employee::class, AttendanceRecord::class, Holiday::class, CloudDeletion::class],
     version = 4,
-    exportSchema = true,
+    // Ekspor skema JSON dimatikan: dua varian (indohpl & egkost) dikompilasi paralel dan saling menimpa
+    // berkas skema yang sama ("Empty schema file" di KSP). Skema itu tidak dipakai (tidak ada tes migrasi).
+    exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun employeeDao(): EmployeeDao
