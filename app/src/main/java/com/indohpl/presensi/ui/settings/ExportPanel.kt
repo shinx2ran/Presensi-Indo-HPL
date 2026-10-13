@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.indohpl.presensi.Site
 import com.indohpl.presensi.data.AppSettings
 import com.indohpl.presensi.data.Repository
 import com.indohpl.presensi.domain.BonusCalculator
@@ -75,8 +76,9 @@ fun ExportPanel(repository: Repository, onMessage: (String) -> Unit) {
         val md = RecapFormatter.markdown(
             ym = month, recaps = recaps, records = records, employees = employees, config = settings.bonusConfig(),
             rulesText = settings.rulesText(), generatedAt = LocalDateTime.now().format(RecapFormatter.DATE_TIME_FMT),
+            place = Site.place,
         )
-        return Triple(RecapFormatter.detailCsv(month, employees, records), RecapFormatter.summaryCsv(month, recaps), md)
+        return Triple(RecapFormatter.detailCsv(month, employees, records, Site.place), RecapFormatter.summaryCsv(month, recaps), md)
     }
 
     Column {

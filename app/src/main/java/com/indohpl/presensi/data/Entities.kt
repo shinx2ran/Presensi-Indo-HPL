@@ -5,14 +5,21 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-/** Seorang karyawan. Gender hanya untuk tampilan (ikon), tidak memengaruhi perhitungan. */
+/**
+ * Seorang karyawan. Gender menentukan aturan jam masuk yang dipakai (lihat AppSettings) dan warna avatar.
+ * [role] = bagian kerja (mis. "Laundry", "Kos"); kosong bila tidak perlu ditampilkan.
+ */
 @Entity(tableName = "employees")
 data class Employee(
     @PrimaryKey val id: Long,
     val name: String,
     val gender: String,          // "P" = perempuan, "L" = laki-laki
     val active: Boolean = true,
-)
+    @ColumnInfo(defaultValue = "") val role: String = "",
+) {
+    /** "Inul · Laundry" bila ada bagian kerja, selain itu hanya nama. */
+    val label: String get() = if (role.isBlank()) name else "$name · $role"
+}
 
 /** Status satu hari kerja untuk satu karyawan. */
 object Status {
@@ -44,8 +51,8 @@ data class AttendanceRecord(
     val latitude: Double? = null,
     val longitude: Double? = null,
     val accuracy: Float? = null,          // akurasi GPS dalam meter
-    val distanceMeters: Int? = null,      // jarak ke titik toko, null jika titik toko belum diatur
-    @ColumnInfo(defaultValue = "0") val inLocation: Boolean = false, // true = dalam radius toko
+    val distanceMeters: Int? = null,      // jarak ke titik lokasi kerja, null jika titik belum diatur
+    @ColumnInfo(defaultValue = "0") val inLocation: Boolean = false, // true = dalam radius lokasi kerja
     @ColumnInfo(defaultValue = "") val locationNote: String = "",    // mis. "GPS tidak didapat", "lokasi palsu"
     @ColumnInfo(defaultValue = "0") val synced: Boolean = false,     // sudah terkirim ke cloud (Firestore)
 ) {
@@ -57,7 +64,7 @@ data class AttendanceRecord(
 @Entity(tableName = "cloud_deletions")
 data class CloudDeletion(@PrimaryKey val docId: String)
 
-/** Tanggal libur (toko tutup) — tidak dihitung sebagai hari kerja. */
+/** Tanggal libur (tempat kerja tutup) — tidak dihitung sebagai hari kerja. */
 @Entity(tableName = "holidays")
 data class Holiday(
     @PrimaryKey val date: String, // yyyy-MM-dd

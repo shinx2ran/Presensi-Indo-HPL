@@ -200,7 +200,7 @@ private fun RecapCard(
                 Avatar(recap.employee)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(recap.employee.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(recap.employee.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(
                         "Hadir ${recap.hadir}/${recap.workDaysElapsed} · Tepat ${recap.tepat} · Telat ${recap.telat} · Alpa ${recap.alpa}" +
                             (if (recap.izin + recap.sakit > 0) " · Izin/Sakit ${recap.izin + recap.sakit}" else "") +

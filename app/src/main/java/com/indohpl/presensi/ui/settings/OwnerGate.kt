@@ -34,6 +34,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.indohpl.presensi.Site
 import com.indohpl.presensi.data.Repository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -71,7 +72,7 @@ private fun CreatePinScreen(repository: Repository, onDone: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     PinLayout(
         title = "Buat PIN owner",
-        subtitle = "Tab Pengaturan (aturan, uang rajin, lokasi toko, ekspor) hanya untuk owner. Buat PIN $PIN_MIN–$PIN_MAX angka. Simpan baik-baik: PIN yang lupa hanya bisa direset dengan menghapus data aplikasi.",
+        subtitle = "Tab Pengaturan (aturan, uang rajin, lokasi ${Site.place}, ekspor) hanya untuk owner. Buat PIN $PIN_MIN–$PIN_MAX angka. Simpan baik-baik: PIN yang lupa hanya bisa direset dengan menghapus data aplikasi.",
         error = error,
     ) {
         PinField(pin1, { pin1 = it }, "PIN baru")

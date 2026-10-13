@@ -61,6 +61,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.indohpl.presensi.Site
 import com.indohpl.presensi.data.AppSettings
 import com.indohpl.presensi.data.Employee
 import com.indohpl.presensi.data.Repository
@@ -152,12 +153,13 @@ fun CheckInScreen(
                 storeLat = settings.storeLat,
                 storeLon = settings.storeLon,
                 radiusMeters = settings.radiusMeters,
+                place = Site.place,
             )
             geoState = GeoState.FOUND
         }
     }
 
-    // Boleh jepret? Jika "wajib di lokasi" aktif dan titik toko sudah diatur: harus dapat GPS dan di dalam radius.
+    // Boleh jepret? Jika "wajib di lokasi" aktif dan titik lokasi sudah diatur: harus dapat GPS dan di dalam radius.
     val locationRequired = settings.requireLocation && settings.hasStoreLocation
     val canCapture = !locationRequired || (geo?.inLocation == true)
 
@@ -230,14 +232,14 @@ fun CheckInScreen(
                                     GeoRule.formatCoord(g.latitude, g.longitude) + (g.accuracy?.let { " (±${it.toInt()} m)" } ?: ""),
                                     when {
                                         g.isMock -> "LOKASI PALSU"
-                                        g.distanceMeters == null -> "Titik toko belum diatur"
-                                        g.inLocation -> "Di lokasi Indo HPL · ${GeoRule.formatDistance(g.distanceMeters)} dari titik toko"
-                                        else -> "DI LUAR LOKASI · ${GeoRule.formatDistance(g.distanceMeters)} dari titik toko"
+                                        g.distanceMeters == null -> "Titik ${Site.place} belum diatur"
+                                        g.inLocation -> "Di lokasi ${Site.name} · ${GeoRule.formatDistance(g.distanceMeters)} dari titik ${Site.place}"
+                                        else -> "DI LUAR LOKASI · ${GeoRule.formatDistance(g.distanceMeters)} dari titik ${Site.place}"
                                     },
                                 )
                             }
                             val preview = withContext(Dispatchers.IO) {
-                                PhotoStamper.stamp(tmp, target, emp.name, capturedAt, "Presensi Indo HPL · HP Kasir", extra)
+                                PhotoStamper.stamp(tmp, target, emp.label, capturedAt, Site.stampFooter, extra)
                                 tmp.delete()
                                 BitmapFactory.decodeFile(target.absolutePath)?.asImageBitmap()
                             }
@@ -307,7 +309,7 @@ fun CheckInScreen(
                     Text("Langkah 1 dari 2: Verifikasi biometrik", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Tempelkan sidik jari / pindai wajah / masukkan PIN HP kasir.",
+                        "Tempelkan sidik jari / pindai wajah / masukkan PIN ${Site.device}.",
                         textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -440,7 +442,7 @@ fun CheckInScreen(
                         Spacer(Modifier.height(8.dp))
                         shot?.geo?.let { g ->
                             Text(
-                                if (g.inLocation) "Di lokasi Indo HPL" else "Di luar lokasi toko (${g.note})",
+                                if (g.inLocation) "Di lokasi ${Site.name}" else "Di luar lokasi ${Site.place} (${g.note})",
                                 color = if (g.inLocation) Green else MaterialTheme.colorScheme.error,
                             )
                         }
@@ -473,9 +475,9 @@ private fun LocationStatus(
         state == GeoState.IDLE || state == GeoState.SEARCHING -> "Mencari posisi GPS…" to MaterialTheme.colorScheme.onSurfaceVariant
         state == GeoState.FAILED || geo == null -> "GPS tidak didapat. Nyalakan Lokasi HP, coba di dekat jendela." to MaterialTheme.colorScheme.error
         geo.isMock -> "Terdeteksi lokasi palsu (fake GPS)." to MaterialTheme.colorScheme.error
-        !storeSet -> "Posisi ${GeoRule.formatCoord(geo.latitude, geo.longitude)}. Titik toko belum diatur di Pengaturan." to Amber
-        geo.inLocation -> "Di lokasi Indo HPL · ${GeoRule.formatDistance(geo.distanceMeters ?: 0)} dari titik toko" to Green
-        else -> "Di luar lokasi toko · ${GeoRule.formatDistance(geo.distanceMeters ?: 0)} dari titik toko" to MaterialTheme.colorScheme.error
+        !storeSet -> "Posisi ${GeoRule.formatCoord(geo.latitude, geo.longitude)}. Titik ${Site.place} belum diatur di Pengaturan." to Amber
+        geo.inLocation -> "Di lokasi ${Site.name} · ${GeoRule.formatDistance(geo.distanceMeters ?: 0)} dari titik ${Site.place}" to Green
+        else -> "Di luar lokasi ${Site.place} · ${GeoRule.formatDistance(geo.distanceMeters ?: 0)} dari titik ${Site.place}" to MaterialTheme.colorScheme.error
     }
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -492,7 +494,7 @@ private fun LocationStatus(
     }
     if (required && geo?.inLocation != true) {
         Text(
-            "Absen hanya bisa disimpan di lokasi toko.",
+            "Absen hanya bisa disimpan di lokasi ${Site.place}.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp),

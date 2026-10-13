@@ -24,31 +24,45 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Unit tests (logika uang rajin)
-        run: gradle --no-daemon testDebugUnitTest
+      - name: Unit tests (logika uang rajin, kedua varian)
+        run: gradle --no-daemon testIndohplDebugUnitTest testEgkostDebugUnitTest
 
-      - name: Build debug APK
-        run: gradle --no-daemon assembleDebug
+      - name: Build debug APK (Indo HPL + EG Kost)
+        run: gradle --no-daemon assembleIndohplDebug assembleEgkostDebug
 
-      - name: Upload APK
+      - name: Upload APK Indo HPL
         uses: actions/upload-artifact@v4
         with:
           name: presensi-indo-hpl-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/indohpl/debug/app-indohpl-debug.apk
           if-no-files-found: error
 
-      # Simpan APK ke branch "apk-build" supaya bisa diunduh langsung tanpa membuka Actions:
-      # https://github.com/shinx2ran/Presensi-Indo-HPL/raw/apk-build/PresensiIndoHPL.apk
+      - name: Upload APK EG Kost
+        uses: actions/upload-artifact@v4
+        with:
+          name: presensi-eg-kost-debug
+          path: app/build/outputs/apk/egkost/debug/app-egkost-debug.apk
+          if-no-files-found: error
+
+      # Simpan kedua APK ke branch "apk-build" supaya bisa diunduh langsung tanpa membuka Actions:
+      #   https://github.com/shinx2ran/Presensi-Indo-HPL/raw/apk-build/PresensiIndoHPL.apk
+      #   https://github.com/shinx2ran/Presensi-Indo-HPL/raw/apk-build/PresensiEGKost.apk
       - name: Publish APK ke branch apk-build
         if: github.event_name == 'push'
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk /tmp/PresensiIndoHPL.apk
+          cp app/build/outputs/apk/indohpl/debug/app-indohpl-debug.apk /tmp/PresensiIndoHPL.apk
+          cp app/build/outputs/apk/egkost/debug/app-egkost-debug.apk /tmp/PresensiEGKost.apk
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout --orphan apk-build
           git rm -rf --quiet .
-          cp /tmp/PresensiIndoHPL.apk .
-          printf '# APK Presensi Indo HPL\n\nDibangun dari commit %s (%s).\n\nUnduh: https://github.com/%s/raw/apk-build/PresensiIndoHPL.apk\n' "$GITHUB_SHA" "$GITHUB_REF_NAME" "$GITHUB_REPOSITORY" > README.md
-          git add -f PresensiIndoHPL.apk README.md
+          cp /tmp/PresensiIndoHPL.apk /tmp/PresensiEGKost.apk .
+          {
+            printf '# APK Presensi\n\nDibangun dari commit %s (%s).\n\n' "$GITHUB_SHA" "$GITHUB_REF_NAME"
+            printf '| Aplikasi | Unduh |\n|---|---|\n'
+            printf '| Presensi Indo HPL (HP kasir) | https://github.com/%s/raw/apk-build/PresensiIndoHPL.apk |\n' "$GITHUB_REPOSITORY"
+            printf '| Presensi EG Kost | https://github.com/%s/raw/apk-build/PresensiEGKost.apk |\n' "$GITHUB_REPOSITORY"
+          } > README.md
+          git add -f PresensiIndoHPL.apk PresensiEGKost.apk README.md
           git commit -q -m "APK build dari $GITHUB_SHA"
           git push -f origin apk-build

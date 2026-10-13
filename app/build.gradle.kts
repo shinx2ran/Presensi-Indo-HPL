@@ -13,9 +13,23 @@ android {
         applicationId = "com.indohpl.presensi"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
         vectorDrawables.useSupportLibrary = true
+    }
+
+    // Satu basis kode, dua aplikasi. Tiap varian punya applicationId sendiri (bisa dipasang berdampingan),
+    // nama aplikasi, warna ikon, dan konfigurasi tempat kerja (src/<varian>/java/.../Site.kt).
+    flavorDimensions += "site"
+    productFlavors {
+        create("indohpl") {
+            dimension = "site"
+            applicationId = "com.indohpl.presensi"   // aplikasi kasir Indo HPL (tidak berubah)
+        }
+        create("egkost") {
+            dimension = "site"
+            applicationId = "com.egkost.presensi"    // aplikasi EG Kost
+        }
     }
 
     buildTypes {

@@ -12,8 +12,8 @@ data class GeoCheck(
     val latitude: Double,
     val longitude: Double,
     val accuracy: Float?,        // meter, null jika tidak diketahui
-    val distanceMeters: Int?,    // null jika titik toko belum diatur
-    val inLocation: Boolean,     // dalam radius toko (atau titik toko belum diatur -> false)
+    val distanceMeters: Int?,    // null jika titik lokasi kerja belum diatur
+    val inLocation: Boolean,     // dalam radius lokasi kerja (atau titik belum diatur -> false)
     val isMock: Boolean,         // lokasi palsu (aplikasi fake GPS)
     val note: String,            // keterangan singkat untuk stempel/rekap
 )
@@ -31,8 +31,9 @@ object GeoRule {
     }
 
     /**
-     * Evaluasi posisi HP terhadap titik toko.
+     * Evaluasi posisi HP terhadap titik lokasi kerja.
      * Toleransi: jarak dikurangi akurasi GPS (kalau GPS bilang "±30 m", 20 m di luar radius masih dianggap di lokasi).
+     * [place] = kata tempat kerja untuk keterangan, mis. "toko" atau "kost" (lihat Site.place).
      */
     fun check(
         latitude: Double,
@@ -42,16 +43,17 @@ object GeoRule {
         storeLat: Double?,
         storeLon: Double?,
         radiusMeters: Int,
+        place: String,
     ): GeoCheck {
         if (storeLat == null || storeLon == null) {
-            return GeoCheck(latitude, longitude, accuracy, null, false, isMock, if (isMock) "lokasi palsu" else "titik toko belum diatur")
+            return GeoCheck(latitude, longitude, accuracy, null, false, isMock, if (isMock) "lokasi palsu" else "titik $place belum diatur")
         }
         val d = distanceMeters(latitude, longitude, storeLat, storeLon)
         val effective = (d - (accuracy ?: 0f)).coerceAtLeast(0.0)
         val inside = !isMock && effective <= radiusMeters
         val note = when {
             isMock -> "lokasi palsu"
-            inside -> "di lokasi toko"
+            inside -> "di lokasi $place"
             else -> "di luar lokasi"
         }
         return GeoCheck(latitude, longitude, accuracy, d.roundToInt(), inside, isMock, note)

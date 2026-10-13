@@ -28,6 +28,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.indohpl.presensi.Site
 import com.indohpl.presensi.cloud.CloudSync
 import com.indohpl.presensi.cloud.FirebaseCloud
 import com.indohpl.presensi.data.CloudConfig
@@ -112,7 +113,7 @@ fun CloudSection(repository: Repository, onMessage: (String) -> Unit) {
             }
             Switch(checked = enabled, onCheckedChange = { enabled = it; save(if (it) "Cloud diaktifkan" else "Cloud dinonaktifkan") })
         }
-        OutlinedTextField(value = projectId, onValueChange = { projectId = it }, label = { Text("Project ID") }, singleLine = true, modifier = Modifier.fillMaxWidth(), placeholder = { Text("presensi-indo-hpl") })
+        OutlinedTextField(value = projectId, onValueChange = { projectId = it }, label = { Text("Project ID") }, singleLine = true, modifier = Modifier.fillMaxWidth(), placeholder = { Text(Site.firebaseProjectHint) })
         OutlinedTextField(value = appId, onValueChange = { appId = it }, label = { Text("App ID (mobilesdk_app_id)") }, singleLine = true, modifier = Modifier.fillMaxWidth(), placeholder = { Text("1:1234567890:android:abc123") })
         OutlinedTextField(value = apiKey, onValueChange = { apiKey = it }, label = { Text("API key (current_key)") }, singleLine = true, modifier = Modifier.fillMaxWidth(), placeholder = { Text("AIza…") })
         OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Email login Firebase") }, singleLine = true, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))

@@ -14,7 +14,7 @@ import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 
-/** Ambil posisi GPS HP kasir sekali (fused location dari Google Play Services). */
+/** Ambil posisi GPS HP sekali (fused location dari Google Play Services). */
 object LocationHelper {
     val PERMISSIONS = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
 

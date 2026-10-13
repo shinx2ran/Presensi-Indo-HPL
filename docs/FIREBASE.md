@@ -1,16 +1,24 @@
 # Panduan Firebase (sinkronisasi cloud, gratis)
 
-Tujuan: setiap presensi di HP kasir otomatis terkirim ke **Firestore** (database Google) milik Anda,
-sehingga bisa dilihat dari HP owner dan aman kalau HP kasir hilang.
+Tujuan: setiap presensi di HP presensi (HP kasir Indo HPL, atau HP di EG Kost) otomatis terkirim ke **Firestore** (database Google) milik Anda,
+sehingga bisa dilihat dari HP owner dan aman kalau HP itu hilang.
+
+> Ada dua aplikasi dalam repo ini (Indo HPL dan EG Kost). **Buat satu proyek Firebase untuk masing-masing aplikasi**
+> supaya datanya tidak bercampur. Langkah di bawah sama untuk keduanya; yang berbeda hanya nama proyek dan package name:
+>
+> | Aplikasi | Nama proyek (saran) | Android package name |
+> |---|---|---|
+> | Presensi Indo HPL | `presensi-indo-hpl` | `com.indohpl.presensi` |
+> | Presensi EG Kost | `presensi-eg-kost` | `com.egkost.presensi` |
 Semua yang dipakai ada di paket **Spark (gratis, tanpa kartu kredit)**: Firestore + Authentication.
 Foto disimpan di dalam Firestore (dikompres sekitar 100 KB), **bukan** di Cloud Storage (yang sejak 2026 butuh kartu kredit).
 
-Perkiraan pemakaian: 5 karyawan × 30 hari × 100 KB ≈ 15 MB per bulan. Kuota gratis 1 GiB cukup sekitar 5 tahun.
+Perkiraan pemakaian: 5 karyawan × 30 hari × 100 KB ≈ 15 MB per bulan (Indo HPL); 2 karyawan ≈ 6 MB per bulan (EG Kost). Kuota gratis 1 GiB cukup lebih dari 5 tahun.
 
 ## Bagian 1. Buat proyek Firebase (sekali, sekitar 15 menit, dari komputer lebih mudah)
 
 1. Buka https://console.firebase.google.com dan login dengan akun Google Anda.
-2. Klik **Create a project** (Buat proyek). Nama: `presensi-indo-hpl`. Google Analytics boleh **dimatikan**. Klik Create.
+2. Klik **Create a project** (Buat proyek). Nama: `presensi-indo-hpl` (atau `presensi-eg-kost`). Google Analytics boleh **dimatikan**. Klik Create.
 3. Di menu kiri **Build → Firestore Database → Create database**.
    - Location: pilih **asia-southeast2 (Jakarta)**.
    - Pilih **Start in production mode**. Klik Create.
@@ -32,8 +40,8 @@ Perkiraan pemakaian: 5 karyawan × 30 hari × 100 KB ≈ 15 MB per bulan. Kuota 
    - Tab **Sign-in method** → pilih **Email/Password** → Enable → Save.
    - Tab **Users** → **Add user** → isi email (misal `kasir@indohpl.id`, tidak harus email sungguhan) dan password yang kuat. Catat keduanya.
 6. Klik ikon roda gigi di kiri atas → **Project settings**. Gulir ke bawah ke **Your apps** → klik ikon **Android**.
-   - Android package name: `com.indohpl.presensi`
-   - Nickname: `Presensi Indo HPL`
+   - Android package name: `com.indohpl.presensi` (Indo HPL) atau `com.egkost.presensi` (EG Kost) — lihat tabel di atas
+   - Nickname: `Presensi Indo HPL` atau `Presensi EG Kost`
    - SHA-1: kosongkan. Klik **Register app**.
    - Klik **Download google-services.json**. Buka file itu dengan Notepad. Anda butuh 3 nilai:
 
@@ -45,7 +53,7 @@ Perkiraan pemakaian: 5 karyawan × 30 hari × 100 KB ≈ 15 MB per bulan. Kuota 
 
    Klik Next sampai selesai (langkah "Add Firebase SDK" boleh dilewati, aplikasi tidak memakai file itu).
 
-## Bagian 2. Isi di aplikasi (HP kasir)
+## Bagian 2. Isi di aplikasi (HP presensi)
 
 1. Buka aplikasi → tab **Pengaturan** → masukkan PIN owner.
 2. Bagian **Sinkronisasi cloud (Firebase)**: isi Project ID, App ID, API key, email, password dari Bagian 1.
@@ -57,7 +65,7 @@ Perkiraan pemakaian: 5 karyawan × 30 hari × 100 KB ≈ 15 MB per bulan. Kuota 
 
 1. Pasang APK yang sama di HP Anda (link di README).
 2. Pengaturan → buat PIN owner → bagian Firebase: isi data yang sama → **Hubungkan & uji**.
-3. Tab **Rekap** sekarang punya pilihan **HP ini / Cloud**. Pilih **Cloud**: data dari HP kasir muncul, ketuk nama untuk detail dan foto.
+3. Tab **Rekap** sekarang punya pilihan **HP ini / Cloud**. Pilih **Cloud**: data dari HP presensi muncul, ketuk nama untuk detail dan foto.
 4. **Pengaturan → Ekspor rekap bulanan** juga punya pilihan Cloud, jadi file untuk Claude bisa dibuat dari HP Anda.
 
 Jangan absen dari HP owner: HP owner hanya untuk melihat. (Kalau terlanjur, hapus lewat menu titik tiga.)
@@ -82,4 +90,4 @@ note, latitude, longitude, accuracy, distanceMeters, inLocation, locationNote,
 photoBase64 (foto JPEG kecil), device, uploadedAt
 ```
 
-Menghapus presensi di HP kasir juga menghapus dokumennya di cloud.
+Menghapus presensi di HP presensi juga menghapus dokumennya di cloud.

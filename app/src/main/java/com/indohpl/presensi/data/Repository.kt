@@ -1,6 +1,7 @@
 package com.indohpl.presensi.data
 
 import android.content.Context
+import com.indohpl.presensi.Site
 import com.indohpl.presensi.cloud.CloudSync
 import com.indohpl.presensi.domain.GeoCheck
 import com.indohpl.presensi.domain.LateRule
@@ -24,19 +25,13 @@ class Repository(context: Context) {
     /** Folder foto selfie: <filesDir>/photos/yyyy-MM/ */
     val photoRoot: File = File(context.filesDir, "photos")
 
-    /** Daftar karyawan awal. Bisa diubah nanti lewat database tanpa mengubah kode. */
+    /**
+     * Pastikan semua karyawan awal varian ini ada di database (lihat `Site.seedEmployees` di src/<varian>/java).
+     * Dipanggil setiap aplikasi dibuka; karyawan yang sudah ada tidak diubah (OnConflictStrategy.IGNORE),
+     * jadi menambah baris baru di Site.kt cukup untuk memunculkan karyawan baru di HP yang sudah terpasang.
+     */
     suspend fun ensureSeeded() {
-        if (employeeDao.count() == 0) {
-            employeeDao.insertAll(
-                listOf(
-                    Employee(1, "Sara", "P"),
-                    Employee(2, "Riyanti", "P"),
-                    Employee(3, "Evan", "L"),
-                    Employee(4, "Madi", "L"),
-                    Employee(5, "Roni", "L"),
-                ),
-            )
-        }
+        employeeDao.insertAll(Site.seedEmployees)
     }
 
     fun observeEmployees(): Flow<List<Employee>> = employeeDao.observeAll()
@@ -48,7 +43,7 @@ class Repository(context: Context) {
     fun observeHolidays(): Flow<List<Holiday>> = holidayDao.observeAll()
 
     /**
-     * Simpan presensi hadir. [capturedAt] adalah waktu saat foto diambil (jam HP kasir).
+     * Simpan presensi hadir. [capturedAt] adalah waktu saat foto diambil (jam HP presensi).
      * Mengembalikan null jika karyawan sudah absen hari itu.
      */
     suspend fun recordCheckIn(
@@ -61,7 +56,7 @@ class Repository(context: Context) {
         if (attendanceDao.find(employeeId, date) != null) return null
         val employee = employeeDao.getById(employeeId) ?: return null
         val s = settingsStore.current()
-        // Aturan per gender: perempuan 07:45 (+10), laki-laki 08:00 (+5) secara bawaan.
+        // Aturan jam masuk per gender; nilai bawaan per varian ada di Site, bisa diubah owner di Pengaturan.
         val late = LateRule.lateMinutes(
             capturedAt.toLocalTime(),
             s.workStartFor(employee.gender),

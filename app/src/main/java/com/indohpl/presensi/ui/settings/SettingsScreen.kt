@@ -45,6 +45,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.indohpl.presensi.Site
 import com.indohpl.presensi.data.AppSettings
 import com.indohpl.presensi.data.Holiday
 import com.indohpl.presensi.data.Repository
@@ -80,6 +81,13 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
     val scope = rememberCoroutineScope()
     val saved by repository.settingsStore.settings.collectAsStateWithLifecycle(null)
     val holidays by repository.observeHolidays().collectAsStateWithLifecycle(emptyList())
+    val employees by repository.observeEmployees().collectAsStateWithLifecycle(emptyList())
+
+    /** "Perempuan (Inul, Bik Nia)" — nama diambil dari daftar karyawan aktif, bukan ditulis mati. */
+    fun genderLabel(title: String, gender: String): String {
+        val names = employees.filter { it.active && it.gender == gender }.map { it.name }
+        return if (names.isEmpty()) "$title (belum ada karyawan)" else "$title (${names.joinToString(", ")})"
+    }
 
     var workStartF by remember { mutableStateOf("") }
     var toleranceF by remember { mutableStateOf("") }
@@ -194,12 +202,12 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
                 "Datang lewat dari jam masuk + toleransi = telat. Menit telat dihitung dari jam masuk.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text("Perempuan (Sara, Riyanti)", style = MaterialTheme.typography.labelLarge)
+            Text(genderLabel("Perempuan", "P"), style = MaterialTheme.typography.labelLarge)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = workStartF, onValueChange = { workStartF = it },
                     label = { Text("Jam masuk") }, singleLine = true, modifier = Modifier.weight(1f),
-                    placeholder = { Text("07:45") },
+                    placeholder = { Text(Site.workStartFemale) },
                 )
                 OutlinedTextField(
                     value = toleranceF, onValueChange = { toleranceF = it.filter(Char::isDigit) },
@@ -207,12 +215,12 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 )
             }
-            Text("Laki-laki (Evan, Madi, Roni)", style = MaterialTheme.typography.labelLarge)
+            Text(genderLabel("Laki-laki", "L"), style = MaterialTheme.typography.labelLarge)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = workStartM, onValueChange = { workStartM = it },
                     label = { Text("Jam masuk") }, singleLine = true, modifier = Modifier.weight(1f),
-                    placeholder = { Text("08:00") },
+                    placeholder = { Text(Site.workStartMale) },
                 )
                 OutlinedTextField(
                     value = toleranceM, onValueChange = { toleranceM = it.filter(Char::isDigit) },
@@ -258,14 +266,14 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
                 }
                 Switch(checked = deductAbsent, onCheckedChange = { deductAbsent = it })
             }
-            Text("Lokasi toko Indo HPL", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("Lokasi ${Site.placeFull}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
-                "Selfie hanya sah bila HP berada dalam radius ini dari titik toko. Ambil titiknya sambil berdiri di dalam toko, atau salin koordinat dari Google Maps (tekan lama lokasi → angka di atas).",
+                "Selfie hanya sah bila HP berada dalam radius ini dari titik ${Site.place}. Ambil titiknya sambil berdiri di dalam ${Site.place}, atau salin koordinat dari Google Maps (tekan lama lokasi → angka di atas).",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             OutlinedTextField(
                 value = storeLatLon, onValueChange = { storeLatLon = it },
-                label = { Text("Koordinat toko (lat, lon)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text("Koordinat ${Site.place} (lat, lon)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("-6.200000, 106.816666") },
                 supportingText = { if (storeLatLon.isBlank()) Text("Kosong = pengecekan lokasi tidak aktif.") },
             )
@@ -280,11 +288,11 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
                 value = radius, onValueChange = { radius = it.filter(Char::isDigit) },
                 label = { Text("Radius toleransi (meter)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                supportingText = { Text("Akurasi GPS ikut diperhitungkan. 100 m cukup untuk toko di dalam ruko/mall.") },
+                supportingText = { Text("Akurasi GPS ikut diperhitungkan. ${Site.radiusHint}") },
             )
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f)) {
-                    Text("Wajib di lokasi toko")
+                    Text("Wajib di lokasi ${Site.place}")
                     Text(
                         "Aktif: absen ditolak jika di luar radius atau GPS tidak didapat. Nonaktif: tetap tercatat tapi ditandai \"di luar lokasi\".",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -297,7 +305,7 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-            Text("Hari libur toko", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("Hari libur ${Site.place}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
                 "Tanggal di sini tidak dihitung sebagai hari kerja (tidak ada alpa, tidak dipotong).",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -375,8 +383,8 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             Text("Catatan penting", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
-                "• Biometrik memakai sidik jari/wajah/PIN yang terdaftar di HP kasir ini. Android tidak memberi tahu aplikasi sidik jari siapa yang dipakai, jadi bukti identitas utama adalah selfie berstempel waktu.\n" +
-                    "• Waktu diambil dari jam HP kasir. Pastikan jam HP otomatis (dari jaringan).\n" +
+                "• Biometrik memakai sidik jari/wajah/PIN yang terdaftar di ${Site.device} ini. Android tidak memberi tahu aplikasi sidik jari siapa yang dipakai, jadi bukti identitas utama adalah selfie berstempel waktu.\n" +
+                    "• Waktu diambil dari jam ${Site.device}. Pastikan jam HP otomatis (dari jaringan).\n" +
                     "• Koordinat GPS dibakar ke foto. Aplikasi fake GPS terdeteksi dan ditolak.\n" +
                     "• PIN owner yang lupa hanya bisa direset dengan menghapus data aplikasi (semua presensi ikut hilang), jadi ekspor dulu.\n" +
                     "• Foto tersimpan di dalam aplikasi (folder privat). Menghapus aplikasi = menghapus semua data. Ekspor rekap tiap bulan.",

@@ -1,5 +1,6 @@
 package com.indohpl.presensi.domain
 
+import com.indohpl.presensi.data.AppSettings
 import com.indohpl.presensi.data.AttendanceRecord
 import com.indohpl.presensi.data.Employee
 import com.indohpl.presensi.data.Status
@@ -141,6 +142,34 @@ class BonusCalculatorTest {
     }
 
     @Test
+    fun kostRuleHalfPastSevenWithTenMinutes() {
+        // EG Kost: jam masuk 07:30, toleransi 10 -> batas 07:40:00
+        assertEquals(0, LateRule.lateMinutes(LocalTime.of(7, 29, 0), "07:30", 10))
+        assertEquals(0, LateRule.lateMinutes(LocalTime.of(7, 40, 0), "07:30", 10))
+        assertEquals(10, LateRule.lateMinutes(LocalTime.of(7, 40, 1), "07:30", 10))
+        assertEquals(11, LateRule.lateMinutes(LocalTime.of(7, 41, 0), "07:30", 10))
+        assertEquals(45, LateRule.lateMinutes(LocalTime.of(8, 15, 0), "07:30", 10))
+    }
+
+    @Test
+    fun rulesTextCollapsesWhenBothGendersShareOneRule() {
+        val same = AppSettings(workStartFemale = "07:30", toleranceFemale = 10, workStartMale = "07:30", toleranceMale = 10)
+        assertTrue(same.sameRuleForAll)
+        assertEquals("07:30 (toleransi 10 mnt)", same.rulesText())
+        assertEquals("07:30 (+10 mnt)", same.shortRulesText())
+        val diff = AppSettings(workStartFemale = "07:45", toleranceFemale = 10, workStartMale = "08:00", toleranceMale = 5)
+        assertFalse(diff.sameRuleForAll)
+        assertEquals("Perempuan 07:45 (toleransi 10 mnt) · Laki-laki 08:00 (toleransi 5 mnt)", diff.rulesText())
+        assertEquals("P 07:45 (+10 mnt) · L 08:00 (+5 mnt)", diff.shortRulesText())
+    }
+
+    @Test
+    fun employeeLabelIncludesRoleOnlyWhenSet() {
+        assertEquals("Sara", Employee(1, "Sara", "P").label)
+        assertEquals("Inul · Laundry", Employee(1, "Inul", "P", role = "Laundry").label)
+    }
+
+    @Test
     fun sevenDayWorkWeek() {
         val all = java.time.DayOfWeek.values().toSet()
         assertEquals(30, BonusCalculator.workDays(sep, all, emptySet()).size)
@@ -161,11 +190,20 @@ class BonusCalculatorTest {
     fun csvAndMarkdownContainNamesAndTotals() {
         val records = listOf(rec(sara, LocalDate.of(2026, 9, 1), Status.TELAT, 12))
         val recaps = BonusCalculator.recap(sep, LocalDate.of(2026, 9, 1), listOf(sara), records, monSat, emptySet(), config)
-        val csv = RecapFormatter.detailCsv(sep, listOf(sara), records)
+        val csv = RecapFormatter.detailCsv(sep, listOf(sara), records, "toko")
+        assertTrue(csv.startsWith("tanggal,nama,status,jam_masuk,menit_telat,catatan,foto,latitude,longitude,akurasi_m,jarak_toko_m,di_lokasi,ket_lokasi\n"))
         assertTrue(csv.contains("2026-09-01,Sara,TELAT,08:00:00,12,,"))
-        val md = RecapFormatter.markdown(sep, recaps, records, listOf(sara), config, "Perempuan 07:45 (toleransi 10 mnt) · Laki-laki 08:00 (toleransi 5 mnt)", "01/09/2026 09:00:00")
+        val md = RecapFormatter.markdown(sep, recaps, records, listOf(sara), config, "Perempuan 07:45 (toleransi 10 mnt) · Laki-laki 08:00 (toleransi 5 mnt)", "01/09/2026 09:00:00", "toko")
         assertTrue(md.contains("# Rekap Presensi September 2026"))
         assertTrue(md.contains("| Sara | 26 |"))
+        assertTrue(md.contains("| Jarak toko |"))
+        // Varian kost: nama kolom ikut kata tempatnya, dan bagian kerja ikut tampil di ringkasan.
+        val inul = Employee(1, "Inul", "P", role = "Laundry")
+        val kostCsv = RecapFormatter.detailCsv(sep, listOf(inul), emptyList(), "kost")
+        assertTrue(kostCsv.contains(",jarak_kost_m,"))
+        val kostMd = RecapFormatter.markdown(sep, BonusCalculator.recap(sep, LocalDate.of(2026, 9, 1), listOf(inul), emptyList(), monSat, emptySet(), config), emptyList(), listOf(inul), config, "07:30 (toleransi 10 mnt)", "01/09/2026 09:00:00", "kost")
+        assertTrue(kostMd.contains("| Inul · Laundry | 26 |"))
+        assertTrue(kostMd.contains("| Jarak kost |"))
         assertEquals("Rp 250.000", RecapFormatter.rupiah(250_000))
         assertEquals("Rp 9.615", RecapFormatter.rupiah(9_615))
     }
@@ -190,7 +228,7 @@ class GeoRuleTest {
 
     @Test
     fun insideRadiusIsInLocation() {
-        val g = GeoRule.check(storeLat + 0.0003, storeLon, 15f, false, storeLat, storeLon, 100)
+        val g = GeoRule.check(storeLat + 0.0003, storeLon, 15f, false, storeLat, storeLon, 100, "toko")
         assertTrue(g.inLocation)
         assertEquals("di lokasi toko", g.note)
         assertTrue((g.distanceMeters ?: 0) in 25..40)
@@ -199,26 +237,28 @@ class GeoRuleTest {
     @Test
     fun accuracyGivesBenefitOfDoubt() {
         // 120 m dari titik, akurasi ±30 m -> efektif 90 m <= 100 m radius
-        val g = GeoRule.check(storeLat + 0.00108, storeLon, 30f, false, storeLat, storeLon, 100)
+        val g = GeoRule.check(storeLat + 0.00108, storeLon, 30f, false, storeLat, storeLon, 100, "toko")
         assertTrue("d=${g.distanceMeters}", g.inLocation)
-        val g2 = GeoRule.check(storeLat + 0.00108, storeLon, 5f, false, storeLat, storeLon, 100)
+        val g2 = GeoRule.check(storeLat + 0.00108, storeLon, 5f, false, storeLat, storeLon, 100, "toko")
         assertFalse(g2.inLocation)
         assertEquals("di luar lokasi", g2.note)
     }
 
     @Test
     fun mockLocationIsRejected() {
-        val g = GeoRule.check(storeLat, storeLon, 5f, true, storeLat, storeLon, 100)
+        val g = GeoRule.check(storeLat, storeLon, 5f, true, storeLat, storeLon, 100, "toko")
         assertFalse(g.inLocation)
         assertEquals("lokasi palsu", g.note)
     }
 
     @Test
     fun noStoreConfigured() {
-        val g = GeoRule.check(storeLat, storeLon, 5f, false, null, null, 100)
+        val g = GeoRule.check(storeLat, storeLon, 5f, false, null, null, 100, "toko")
         assertFalse(g.inLocation)
         assertEquals(null, g.distanceMeters)
         assertEquals("titik toko belum diatur", g.note)
+        assertEquals("titik kost belum diatur", GeoRule.check(storeLat, storeLon, 5f, false, null, null, 100, "kost").note)
+        assertEquals("di lokasi kost", GeoRule.check(storeLat, storeLon, 5f, false, storeLat, storeLon, 100, "kost").note)
     }
 
     @Test
@@ -243,7 +283,7 @@ class GeoRuleTest {
         )
         val r = BonusCalculator.recap(ym, LocalDate.of(2026, 9, 2), listOf(emp), records, days, emptySet(), BonusConfig(250_000, 0, true)).single()
         assertEquals(1, r.outsideLocation)
-        val csv = RecapFormatter.detailCsv(ym, listOf(emp), records)
+        val csv = RecapFormatter.detailCsv(ym, listOf(emp), records, "toko")
         assertTrue(csv.contains("2026-09-02,Sara,TEPAT,07:50:00,0,,,,,,,TIDAK,di luar lokasi"))
     }
 }

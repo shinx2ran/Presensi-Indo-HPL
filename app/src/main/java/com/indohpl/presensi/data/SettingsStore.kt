@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.indohpl.presensi.Site
 import com.indohpl.presensi.domain.BonusConfig
 import java.time.DayOfWeek
 import java.security.MessageDigest
@@ -20,21 +21,21 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
-/** Pengaturan aplikasi yang bisa diubah kasir dari layar Pengaturan. */
+/** Pengaturan aplikasi yang bisa diubah owner dari layar Pengaturan. Nilai bawaan per varian ada di [Site]. */
 data class AppSettings(
     // Jam masuk & toleransi dibedakan per gender (P = perempuan, L = laki-laki).
-    val workStartFemale: String = "07:45",
-    val toleranceFemale: Int = 10,
-    val workStartMale: String = "08:00",
-    val toleranceMale: Int = 5,
+    val workStartFemale: String = Site.workStartFemale,
+    val toleranceFemale: Int = Site.toleranceFemale,
+    val workStartMale: String = Site.workStartMale,
+    val toleranceMale: Int = Site.toleranceMale,
     val monthlyBonus: Long = 250_000,         // uang rajin penuh per bulan (Rp)
     val lateDeduction: Long = 0,              // potongan per hari telat; 0 = otomatis (bonus / hari kerja)
     val deductAbsent: Boolean = true,         // potong juga jika alpa (tidak hadir tanpa izin)
     val workDays: Set<DayOfWeek> = DayOfWeek.values().toSet(), // Senin–Minggu
-    // --- Lokasi toko Indo HPL ---
-    val storeLat: Double? = null,             // null = titik toko belum diatur
+    // --- Titik lokasi kerja (toko / kost) ---
+    val storeLat: Double? = null,             // null = titik lokasi belum diatur
     val storeLon: Double? = null,
-    val radiusMeters: Int = 100,              // radius toleransi dari titik toko
+    val radiusMeters: Int = 100,              // radius toleransi dari titik lokasi
     val requireLocation: Boolean = true,      // true = absen ditolak jika di luar radius / GPS tidak ada
 ) {
     val hasStoreLocation: Boolean get() = storeLat != null && storeLon != null
@@ -42,9 +43,24 @@ data class AppSettings(
     fun workStartFor(gender: String): String = if (gender == "P") workStartFemale else workStartMale
     fun toleranceFor(gender: String): Int = if (gender == "P") toleranceFemale else toleranceMale
 
+    /** Aturan perempuan dan laki-laki sama persis -> cukup ditampilkan satu kali. */
+    val sameRuleForAll: Boolean get() = workStartFemale == workStartMale && toleranceFemale == toleranceMale
+
     /** Ringkasan aturan untuk ditampilkan / diekspor. */
     fun rulesText(): String =
-        "Perempuan $workStartFemale (toleransi $toleranceFemale mnt) · Laki-laki $workStartMale (toleransi $toleranceMale mnt)"
+        if (sameRuleForAll) {
+            "$workStartFemale (toleransi $toleranceFemale mnt)"
+        } else {
+            "Perempuan $workStartFemale (toleransi $toleranceFemale mnt) · Laki-laki $workStartMale (toleransi $toleranceMale mnt)"
+        }
+
+    /** Versi pendek untuk kartu Beranda, mis. "07:30 (+10 mnt)" atau "P 07:45 (+10 mnt) · L 08:00 (+5 mnt)". */
+    fun shortRulesText(): String =
+        if (sameRuleForAll) {
+            "$workStartFemale (+$toleranceFemale mnt)"
+        } else {
+            "P $workStartFemale (+$toleranceFemale mnt) · L $workStartMale (+$toleranceMale mnt)"
+        }
 
     fun bonusConfig() = BonusConfig(
         monthlyBonus = monthlyBonus,

@@ -21,11 +21,14 @@ object RecapFormatter {
         return "Rp $s"
     }
 
-    /** CSV detail per hari. Dipisah koma, header baris pertama. Cocok untuk Excel / Claude. */
-    fun detailCsv(ym: YearMonth, employees: List<Employee>, records: List<AttendanceRecord>): String {
+    /**
+     * CSV detail per hari. Dipisah koma, header baris pertama. Cocok untuk Excel / Claude.
+     * [place] = kata tempat kerja untuk nama kolom jarak ("toko" -> jarak_toko_m).
+     */
+    fun detailCsv(ym: YearMonth, employees: List<Employee>, records: List<AttendanceRecord>, place: String): String {
         val names = employees.associate { it.id to it.name }
         val sb = StringBuilder()
-        sb.append("tanggal,nama,status,jam_masuk,menit_telat,catatan,foto,latitude,longitude,akurasi_m,jarak_toko_m,di_lokasi,ket_lokasi\n")
+        sb.append("tanggal,nama,status,jam_masuk,menit_telat,catatan,foto,latitude,longitude,akurasi_m,jarak_${place}_m,di_lokasi,ket_lokasi\n")
         records.sortedWith(compareBy({ it.date }, { it.timestamp })).forEach { r ->
             sb.append(
                 listOf(
@@ -64,7 +67,7 @@ object RecapFormatter {
         return sb.toString()
     }
 
-    /** Rekap dalam Markdown — tinggal tempel ke Claude. */
+    /** Rekap dalam Markdown — tinggal tempel ke Claude. [place] = kata tempat kerja ("toko"/"kost"). */
     fun markdown(
         ym: YearMonth,
         recaps: List<EmployeeRecap>,
@@ -73,6 +76,7 @@ object RecapFormatter {
         config: BonusConfig,
         rulesText: String,
         generatedAt: String,
+        place: String,
     ): String {
         val names = employees.associate { it.id to it.name }
         val sb = StringBuilder()
@@ -89,11 +93,11 @@ object RecapFormatter {
         sb.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n")
         recaps.forEach { r ->
             sb.append(
-                "| ${r.employee.name} | ${r.workDaysInMonth} | ${r.hadir} | ${r.tepat} | ${r.telat} | ${r.izin} | ${r.sakit} | ${r.alpa} | ${r.outsideLocation} | ${rupiah(r.totalDeduction)} | **${rupiah(r.bonus)}** |\n",
+                "| ${r.employee.label} | ${r.workDaysInMonth} | ${r.hadir} | ${r.tepat} | ${r.telat} | ${r.izin} | ${r.sakit} | ${r.alpa} | ${r.outsideLocation} | ${rupiah(r.totalDeduction)} | **${rupiah(r.bonus)}** |\n",
             )
         }
         sb.append("\n## Detail harian\n\n")
-        sb.append("| Tanggal | Nama | Status | Jam masuk | Telat (menit) | Lokasi | Jarak toko | Koordinat | Catatan |\n")
+        sb.append("| Tanggal | Nama | Status | Jam masuk | Telat (menit) | Lokasi | Jarak $place | Koordinat | Catatan |\n")
         sb.append("|---|---|---|---|---:|---|---:|---|---|\n")
         records.sortedWith(compareBy({ it.date }, { it.timestamp })).forEach { r ->
             val hadir = r.status == Status.TEPAT || r.status == Status.TELAT

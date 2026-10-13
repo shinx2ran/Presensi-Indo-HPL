@@ -28,7 +28,7 @@ data class EmployeeRecap(
     val izin: Int,
     val sakit: Int,
     val alpa: Int,                 // hari kerja lewat tanpa catatan apa pun
-    val outsideLocation: Int,      // hadir tapi selfie di luar radius toko / GPS tidak ada
+    val outsideLocation: Int,      // hadir tapi selfie di luar radius lokasi kerja / GPS tidak ada
     val totalLateMinutes: Int,
     val deductionPerDay: Long,
     val deductedDays: Int,         // telat (+ alpa jika diaktifkan)

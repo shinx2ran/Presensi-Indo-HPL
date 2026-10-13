@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.indohpl.presensi.Site
 import com.indohpl.presensi.data.AppSettings
 import com.indohpl.presensi.data.AttendanceRecord
 import com.indohpl.presensi.data.Employee
@@ -96,7 +97,7 @@ fun HomeScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("Presensi Indo HPL", fontWeight = FontWeight.Bold)
+                        Text(Site.appTitle, fontWeight = FontWeight.Bold)
                         Text(today.longLabel(), style = MaterialTheme.typography.bodySmall)
                     }
                 },
@@ -118,7 +119,7 @@ fun HomeScreen(
         ) {
             item {
                 InfoBanner(
-                    rules = "P ${settings.workStartFemale} (+${settings.toleranceFemale} mnt) · L ${settings.workStartMale} (+${settings.toleranceMale} mnt)",
+                    rules = settings.shortRulesText(),
                     isWorkDay = isWorkDay,
                     holidayName = holiday?.name,
                     done = todayRecords.count { it.status == Status.TEPAT || it.status == Status.TELAT },
@@ -236,6 +237,9 @@ private fun EmployeeCard(
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(employee.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                if (employee.role.isNotBlank()) {
+                    Text(employee.role, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 Spacer(Modifier.height(4.dp))
                 if (record == null) {
                     Text("Belum absen", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
