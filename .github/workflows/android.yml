@@ -81,6 +81,7 @@ jobs:
           git checkout --orphan apk-build
           git rm -rf --quiet .
           cp /tmp/PresensiIndoHPL.apk /tmp/PresensiEGKost.apk .
+          FILES="PresensiIndoHPL.apk PresensiEGKost.apk README.md"
           OTA="tidak (secret kunci belum diisi)"
           if [ "${STABLE_SIGNED:-}" = "1" ]; then
             OTA="ya, versi $APP_VERSION_CODE"
@@ -97,6 +98,7 @@ jobs:
                 --arg commit "${GITHUB_SHA::7}" \
                 '{versionCode:$code, versionName:$vname, apkUrl:$url, sha256:$sha, sizeBytes:$size, notes:$notes, commit:$commit}' \
                 > "update-$flavor.json"
+              FILES="$FILES $name-$APP_VERSION_CODE.apk update-$flavor.json"
             done
           fi
           {
@@ -105,6 +107,7 @@ jobs:
             printf '| Presensi Indo HPL (HP kasir) | https://github.com/%s/raw/apk-build/PresensiIndoHPL.apk |\n' "$GITHUB_REPOSITORY"
             printf '| Presensi EG Kost | https://github.com/%s/raw/apk-build/PresensiEGKost.apk |\n' "$GITHUB_REPOSITORY"
           } > README.md
-          git add -f ./*.apk ./*.json README.md 2>/dev/null || git add -f ./*.apk README.md
+          # Nama file persis: pathspec git seperti '*.json' ikut menyapu file build di app/build.
+          git add -f -- $FILES
           git commit -q -m "APK build dari $GITHUB_SHA"
           git push -f origin apk-build
