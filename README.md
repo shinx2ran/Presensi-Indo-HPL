@@ -145,6 +145,33 @@ Atau build sendiri di Android Studio (Ladybug atau lebih baru): buka folder proy
 Dari terminal: `gradle assembleIndohplDebug` atau `gradle assembleEgkostDebug`.
 Repo ini sengaja tidak menyertakan `gradlew` (file biner wrapper). Kalau perlu, jalankan `gradle wrapper` sekali (Gradle 8.9 dipakai di CI).
 
+## Pembaruan otomatis (OTA)
+
+Setelah terpasang sekali, aplikasi memperbarui dirinya sendiri lewat internet, tanpa Play Store dan tanpa membuka link GitHub.
+
+```
+push ke GitHub ──▶ CI membangun APK bertanda tangan tetap ──▶ branch apk-build: APK + update-<varian>.json
+                                                                          │
+HP presensi membuka aplikasi ──▶ baca update-<varian>.json ──▶ versi lebih baru? ──▶ kartu "Versi baru tersedia"
+                                                                          │
+                    ketuk Perbarui ──▶ unduh + cek SHA-256, nama paket, nomor versi ──▶ ketuk Pasang ──▶ dialog Android "Perbarui"
+```
+
+* Diperiksa otomatis saat Beranda/Pengaturan dibuka (paling sering tiap 30 menit), atau manual di **Pengaturan → Pembaruan aplikasi → Cek pembaruan sekarang**.
+* Data presensi, foto, PIN, dan pengaturan tetap ada setelah diperbarui.
+* Pertama kali, Android meminta izin **"Izinkan dari sumber ini"** untuk aplikasi Presensi. Setelah itu cukup ketuk Pasang → Perbarui.
+* Nomor versi naik otomatis tiap build (`versionCode = 100 + nomor run GitHub Actions`, `versionName = 1.2.<versionCode>`).
+* Android tidak mengizinkan aplikasi biasa memasang pembaruan tanpa ketukan pengguna sama sekali; itu hanya bisa dengan Play Store atau MDM perusahaan.
+
+**Syarat satu kali: kunci tanda tangan tetap.** Android hanya mau memasang pembaruan yang ditandatangani kunci yang sama. Owner menyimpan dua secret di GitHub: **Settings → Secrets and variables → Actions → New repository secret**:
+
+| Nama secret | Isi |
+|---|---|
+| `SIGNING_KEYSTORE_B64` | isi file kunci (base64) |
+| `SIGNING_PASSWORD` | kata sandi kunci |
+
+Tanpa secret, CI tetap membangun APK (kunci debug acak) tetapi tidak menerbitkan `update-*.json`, jadi aplikasi tidak menawarkan pembaruan. **Simpan cadangan kunci itu**: kalau hilang, semua HP harus uninstall-pasang ulang sekali lagi. Saat pertama beralih ke kunci tetap, HP yang terpasang versi lama (kunci acak) juga perlu uninstall-pasang ulang sekali; ekspor rekap dulu.
+
 ## Yang perlu diketahui
 
 * **Biometrik**: memakai sidik jari / wajah / PIN yang terdaftar di HP presensi. Android **tidak memberi tahu aplikasi sidik jari siapa** yang dipakai, jadi biometrik hanya gerbang "presensi dilakukan di HP ini dengan persetujuan". Bukti identitas utamanya adalah **selfie**. Kalau ingin, daftarkan sidik jari tiap karyawan di HP itu (Android biasanya mengizinkan sampai 5 jari).

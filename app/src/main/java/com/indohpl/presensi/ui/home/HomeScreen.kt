@@ -51,6 +51,7 @@ import com.indohpl.presensi.data.Status
 import com.indohpl.presensi.ui.Avatar
 import com.indohpl.presensi.ui.PhotoDialog
 import com.indohpl.presensi.ui.StatusPill
+import com.indohpl.presensi.ui.UpdateBanner
 import com.indohpl.presensi.ui.longLabel
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -117,6 +118,7 @@ fun HomeScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            item { UpdateBanner() }
             item {
                 InfoBanner(
                     rules = settings.shortRulesText(),

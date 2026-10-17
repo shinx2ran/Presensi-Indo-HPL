@@ -5,6 +5,15 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// Nomor versi naik otomatis tiap build CI (APP_VERSION_CODE = 100 + nomor run GitHub Actions),
+// supaya pembaruan OTA selalu "lebih baru" dari yang terpasang. Build lokal memakai 3 / 1.1.1.
+val ciVersionCode: Int? = System.getenv("APP_VERSION_CODE")?.toIntOrNull()
+
+// Kunci tanda tangan tetap: file + kata sandi hanya datang dari secret GitHub (lihat workflow).
+// Tanpa kunci tetap, tiap build CI memakai kunci debug acak dan Android menolak memasang pembaruan.
+val stableKeystore: File? = System.getenv("SIGNING_KEYSTORE_FILE")?.let { File(it) }?.takeIf { it.exists() }
+val stablePassword: String? = System.getenv("SIGNING_PASSWORD")?.takeIf { it.isNotEmpty() }
+
 android {
     namespace = "com.indohpl.presensi"
     compileSdk = 35
@@ -13,8 +22,8 @@ android {
         applicationId = "com.indohpl.presensi"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.1.1"
+        versionCode = ciVersionCode ?: 3
+        versionName = ciVersionCode?.let { "1.2.$it" } ?: "1.1.1"
         vectorDrawables.useSupportLibrary = true
     }
 
@@ -32,7 +41,22 @@ android {
         }
     }
 
+    signingConfigs {
+        if (stableKeystore != null && stablePassword != null) {
+            create("stable") {
+                storeFile = stableKeystore
+                storeType = "pkcs12"
+                storePassword = stablePassword
+                keyAlias = "presensi"
+                keyPassword = stablePassword
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfigs.findByName("stable")?.let { signingConfig = it }
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -47,6 +71,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true // BuildConfig.VERSION_CODE / FLAVOR dipakai pemeriksa pembaruan OTA
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -92,4 +117,5 @@ dependencies {
     implementation(libs.guava)
 
     testImplementation(libs.junit)
+    testImplementation(libs.org.json) // org.json di unit test JVM (di HP sudah bawaan Android)
 }

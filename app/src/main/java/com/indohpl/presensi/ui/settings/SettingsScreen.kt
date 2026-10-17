@@ -53,6 +53,7 @@ import com.indohpl.presensi.domain.GeoRule
 import com.indohpl.presensi.domain.LateRule
 import com.indohpl.presensi.util.LocationHelper
 import com.indohpl.presensi.domain.RecapFormatter
+import com.indohpl.presensi.ui.UpdateSection
 import com.indohpl.presensi.ui.shortLabel
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -193,6 +194,10 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            UpdateSection()
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
             ExportPanel(repository, onMessage)
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
