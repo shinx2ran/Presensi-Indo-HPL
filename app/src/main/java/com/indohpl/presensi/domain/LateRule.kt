@@ -8,7 +8,14 @@ import java.time.temporal.ChronoUnit
 object LateRule {
     private val HHMM: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
-    fun parseWorkStart(text: String): LocalTime? = runCatching { LocalTime.parse(text.trim(), HHMM) }.getOrNull()
+    /** 00:00–23:59, dua digit (sama persis dengan validasi server). "24:00" atau "7:30" ditolak. */
+    private val STRICT = Regex("""^([01][0-9]|2[0-3]):[0-5][0-9]$""")
+
+    fun parseWorkStart(text: String): LocalTime? {
+        val t = text.trim()
+        if (!STRICT.matches(t)) return null
+        return runCatching { LocalTime.parse(t, HHMM) }.getOrNull()
+    }
 
     /**
      * Menit keterlambatan, dibulatkan ke bawah, minimal 0.

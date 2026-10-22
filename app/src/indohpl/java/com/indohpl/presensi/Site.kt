@@ -11,7 +11,7 @@ val Site = SiteConfig(
     device = "HP kasir",
     stampFooter = "Presensi Indo HPL · HP Kasir",
     radiusHint = "100 m cukup untuk toko di dalam ruko/mall.",
-    firebaseProjectHint = "presensi-indo-hpl",
+    defaultDeviceLabel = "HP Kasir",
     seedEmployees = listOf(
         Employee(1, "Sara", "P"),
         Employee(2, "Riyanti", "P"),

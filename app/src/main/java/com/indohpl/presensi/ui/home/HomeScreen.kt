@@ -46,6 +46,7 @@ import com.indohpl.presensi.Site
 import com.indohpl.presensi.data.AppSettings
 import com.indohpl.presensi.data.AttendanceRecord
 import com.indohpl.presensi.data.Employee
+import com.indohpl.presensi.data.NOTE_MAX
 import com.indohpl.presensi.data.Repository
 import com.indohpl.presensi.data.Status
 import com.indohpl.presensi.ui.Avatar
@@ -157,7 +158,8 @@ fun HomeScreen(
                     Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
                         value = note,
-                        onValueChange = { note = it },
+                        onValueChange = { note = it.take(NOTE_MAX) },
+                        supportingText = { Text("${note.length}/$NOTE_MAX") },
                         label = { Text("Keterangan (opsional)") },
                         modifier = Modifier.fillMaxWidth(),
                     )

@@ -55,14 +55,33 @@ interface AttendanceDao {
     @Query("SELECT * FROM attendance WHERE synced = 0 ORDER BY timestamp")
     suspend fun getUnsynced(): List<AttendanceRecord>
 
+    /** Nomor karyawan yang punya catatan presensi di HP ini (pemeriksaan karyawan saat pertama tersambung). */
+    @Query("SELECT DISTINCT employeeId FROM attendance")
+    suspend fun employeeIdsWithRecords(): List<Long>
+
     @Query("SELECT COUNT(*) FROM attendance WHERE synced = 0")
     fun observeUnsyncedCount(): Flow<Int>
 
-    @Query("UPDATE attendance SET synced = 1 WHERE id = :id")
-    suspend fun markSynced(id: Long)
+    @Query("SELECT COUNT(*) FROM attendance WHERE synced = 0")
+    suspend fun countUnsynced(): Int
+
+    /** Tandai terkirim ke cloud. Dipanggil per kiriman (maks 500 id, di bawah batas variabel SQLite). */
+    @Query("UPDATE attendance SET synced = 1 WHERE id IN (:ids)")
+    suspend fun markSynced(ids: List<Long>)
 
     @Query("UPDATE attendance SET synced = 0")
     suspend fun markAllUnsynced()
+
+    // --- Pembersihan foto lama (hanya kolom photoPath yang diubah) ---
+
+    @Query("SELECT * FROM attendance WHERE photoPath IS NOT NULL")
+    suspend fun getWithPhoto(): List<AttendanceRecord>
+
+    @Query("SELECT * FROM attendance WHERE photoPath IS NOT NULL AND date < :beforeDate")
+    suspend fun getWithPhotoBefore(beforeDate: String): List<AttendanceRecord>
+
+    @Query("UPDATE attendance SET photoPath = NULL WHERE id = :id")
+    suspend fun clearPhotoPath(id: Long)
 }
 
 @Dao
@@ -88,6 +107,12 @@ interface HolidayDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(holiday: Holiday)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(holidays: List<Holiday>)
+
     @Delete
     suspend fun delete(holiday: Holiday)
+
+    @Query("DELETE FROM holidays")
+    suspend fun deleteAll()
 }

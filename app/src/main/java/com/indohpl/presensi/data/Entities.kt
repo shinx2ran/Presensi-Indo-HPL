@@ -54,13 +54,13 @@ data class AttendanceRecord(
     val distanceMeters: Int? = null,      // jarak ke titik lokasi kerja, null jika titik belum diatur
     @ColumnInfo(defaultValue = "0") val inLocation: Boolean = false, // true = dalam radius lokasi kerja
     @ColumnInfo(defaultValue = "") val locationNote: String = "",    // mis. "GPS tidak didapat", "lokasi palsu"
-    @ColumnInfo(defaultValue = "0") val synced: Boolean = false,     // sudah terkirim ke cloud (Firestore)
+    @ColumnInfo(defaultValue = "0") val synced: Boolean = false,     // sudah terkirim ke cloud (dashboard owner)
 ) {
-    /** ID dokumen di cloud: satu per karyawan per tanggal, sama dengan index unik lokal. */
+    /** Kunci presensi di cloud: "yyyy-MM-dd_<employeeId>", satu per karyawan per tanggal (sama dengan index unik lokal). */
     val cloudId: String get() = "${date}_$employeeId"
 }
 
-/** Antrean penghapusan di cloud (dokumen yang sudah dihapus lokal tapi belum terhapus di Firestore). */
+/** Antrean penghapusan di cloud: presensi yang sudah dihapus di HP (salah tekan) tapi belum dihapus di cloud. [docId] = [AttendanceRecord.cloudId]. */
 @Entity(tableName = "cloud_deletions")
 data class CloudDeletion(@PrimaryKey val docId: String)
 

@@ -23,5 +23,7 @@ class SiteTest {
         assertTrue(s.sameRuleForAll)
         assertEquals("07:30 (toleransi 10 mnt)", s.rulesText())
         assertEquals("07:30 (+10 mnt)", s.shortRulesText())
+        assertEquals(60, s.photoRetentionDays)
+        assertEquals("HP Laundry", Site.defaultDeviceLabel)
     }
 }

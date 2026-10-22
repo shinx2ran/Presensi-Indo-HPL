@@ -46,6 +46,7 @@ Jawaban sukses: HTTP 200, isi JSON hasil fungsi. Gagal: HTTP 4xx dengan JSON `{"
 | `device_upload` | `p_key, p_rows [Attendance tanpa device/uploadedAt] \| null, p_deletes [{employeeId, date}] \| null` | `{upserted, deleted}`. Maks 500 baris. Hapus diproses sebelum simpan. |
 | `device_save_settings` | `p_key, p_data (Settings), p_base_version` | `{ok, version}` — `ok:false` = cloud sudah punya versi lebih baru: terapkan versi cloud. |
 | `device_seed_employees` | `p_key, p_rows [{id,name,gender,role,active}]` | jumlah yang dimasukkan; hanya bekerja bila cloud belum punya karyawan sama sekali (0 bila sudah ada). |
+| `device_unpair` | `p_key` | `true` — HP memutus dirinya sendiri ("Putuskan HP ini"); kunci langsung ditolak, sama seperti `owner_revoke_device`. |
 
 ## Bentuk data
 
@@ -86,3 +87,7 @@ Jawaban sukses: HTTP 200, isi JSON hasil fungsi. Gagal: HTTP 4xx dengan JSON `{"
 2. Bila pengaturan di HP diubah owner (lewat PIN) dan belum terkirim: `device_save_settings(data, base = versi terakhir yang diterapkan)`. `ok:false` → pengaturan HP ditimpa versi cloud.
 3. `device_sync` → bila `settings.version` > versi yang diterapkan: terapkan ke HP (aturan jam, uang rajin, lokasi, hari libur, simpan foto). Bila `settings` null: kirim pengaturan HP (`device_save_settings` base 0).
 4. Karyawan: bila cloud kosong → `device_seed_employees(daftar di HP)`; selain itu daftar cloud diterapkan ke HP (tambah/ubah nama, gender, bagian, aktif).
+   Pada sinkron pertama setelah dipasangkan, langkah ini dijalankan **sebelum** mengirim presensi: bila nomor karyawan di cloud dipakai orang lain
+   (nama berbeda) dan HP sudah punya presensi atas nomor itu, sinkron berhenti dengan pesan, supaya presensi tidak tercatat atas nama orang lain.
+   Karena itu dashboard tidak mengizinkan menambah karyawan sebelum HP pertama kali sinkron: daftar karyawan selalu berasal dari HP dulu.
+5. Setelah pengaturan cloud diterapkan, `device_sync` dipanggil sekali lagi supaya dashboard tahu versi yang sudah dipakai HP.

@@ -1,7 +1,7 @@
 -- Presensi karyawan (EG Kost, Indo HPL): data presensi TANPA foto, pengaturan jarak jauh, daftar karyawan, kunci HP.
 -- Semua akses lewat fungsi RPC SECURITY DEFINER yang memeriksa kunci (owner / HP). Tabel tidak bisa dibaca langsung.
 -- Proyek Supabase: presensi-karyawan (yqgcovruqtfoamjynuyf). Diterapkan lewat Supabase MCP (dipecah jadi
--- migrasi presensi_00..11 karena batas waktu alat; isi berkas ini = keadaan akhir database).
+-- migrasi presensi_00..12 karena batas waktu alat; isi berkas ini = keadaan akhir database).
 -- Tidak ada DELETE: HP yang diputus dan presensi "salah tekan" hanya ditandai (revoked_at / deleted_at).
 
 create schema if not exists private;
@@ -415,6 +415,16 @@ begin
   return n;
 end $$;
 
+-- "Putuskan HP ini" dari HP sendiri: kunci HP ditandai diputus (hapus lunak), sama seperti owner_revoke_device.
+create function public.device_unpair(p_key text) returns boolean
+language plpgsql security definer set search_path = '' as $$
+declare k public.api_keys;
+begin
+  k := private.device_site(p_key);
+  update public.api_keys set revoked_at = now() where id = k.id and revoked_at is null;
+  return found;
+end $$;
+
 -- ---------- hak akses: hanya RPC di atas yang bisa dipanggil dari aplikasi/dashboard ----------
 revoke execute on all functions in schema public from public, anon, authenticated;
 revoke execute on all functions in schema private from public, anon, authenticated;
@@ -429,5 +439,6 @@ grant execute on function
   public.device_sync(text, text, text, int, bigint),
   public.device_upload(text, jsonb, jsonb),
   public.device_save_settings(text, jsonb, bigint),
-  public.device_seed_employees(text, jsonb)
+  public.device_seed_employees(text, jsonb),
+  public.device_unpair(text)
 to anon;

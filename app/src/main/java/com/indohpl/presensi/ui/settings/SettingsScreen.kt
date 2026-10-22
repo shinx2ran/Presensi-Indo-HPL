@@ -48,9 +48,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.indohpl.presensi.Site
 import com.indohpl.presensi.data.AppSettings
 import com.indohpl.presensi.data.Holiday
+import com.indohpl.presensi.data.PhotoStorage
 import com.indohpl.presensi.data.Repository
+import com.indohpl.presensi.data.SettingsJson
 import com.indohpl.presensi.domain.GeoRule
 import com.indohpl.presensi.domain.LateRule
+import com.indohpl.presensi.domain.PhotoRetention
 import com.indohpl.presensi.util.LocationHelper
 import com.indohpl.presensi.domain.RecapFormatter
 import com.indohpl.presensi.ui.UpdateSection
@@ -80,7 +83,10 @@ fun SettingsScreen(repository: Repository, onMessage: (String) -> Unit) {
 private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val saved by repository.settingsStore.settings.collectAsStateWithLifecycle(null)
+    // Pengaturan + versi cloud dari satu snapshot: form dimuat ulang bila dashboard mengubah pengaturan.
+    val snapshot by repository.settingsStore.settingsSnapshot.collectAsStateWithLifecycle(null)
+    val cloud by repository.settingsStore.cloud.collectAsStateWithLifecycle(null)
+    val cloudLinked = cloud?.isLinked == true
     val holidays by repository.observeHolidays().collectAsStateWithLifecycle(emptyList())
     val employees by repository.observeEmployees().collectAsStateWithLifecycle(null)
 
@@ -103,8 +109,13 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
     var radius by remember { mutableStateOf("100") }
     var requireLocation by remember { mutableStateOf(true) }
     var requireBiometric by remember { mutableStateOf(true) }
+    var photoDays by remember { mutableStateOf(PhotoRetention.DEFAULT_DAYS.toString()) }
     var locating by remember { mutableStateOf(false) }
     var loaded by remember { mutableStateOf(false) }
+    var loadedVersion by remember { mutableStateOf(0L) }          // versi pengaturan cloud saat form diisi
+    var loadedFrom by remember { mutableStateOf<AppSettings?>(null) } // nilai tersimpan yang sedang tampil di form
+    var photoStorage by remember { mutableStateOf<PhotoStorage?>(null) }
+    var cleaning by remember { mutableStateOf(false) }
 
     fun fetchStoreLocation() {
         locating = true
@@ -125,23 +136,61 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
         if (result.values.any { it }) fetchStoreLocation() else onMessage("Izin lokasi ditolak.")
     }
 
-    // Isi form sekali dari nilai tersimpan.
-    LaunchedEffect(saved) {
-        val s = saved ?: return@LaunchedEffect
+    fun fillForm(s: AppSettings) {
+        workStartF = s.workStartFemale
+        toleranceF = s.toleranceFemale.toString()
+        workStartM = s.workStartMale
+        toleranceM = s.toleranceMale.toString()
+        bonus = s.monthlyBonus.toString()
+        deduction = s.lateDeduction.toString()
+        deductAbsent = s.deductAbsent
+        workDays = s.workDays
+        storeLatLon = if (s.storeLat != null && s.storeLon != null) GeoRule.formatCoord(s.storeLat, s.storeLon) else ""
+        radius = s.radiusMeters.toString()
+        requireLocation = s.requireLocation
+        requireBiometric = s.requireBiometric
+        photoDays = s.photoRetentionDays.toString()
+        loadedFrom = s
+    }
+
+    // Isi form dari nilai tersimpan. Bila pengaturan dari dashboard diterapkan (versi cloud berubah dan isinya beda),
+    // form diisi ulang supaya tombol Simpan tidak pernah menimpa perubahan dari jauh dengan nilai lama.
+    LaunchedEffect(snapshot) {
+        val snap = snapshot ?: return@LaunchedEffect
         if (!loaded) {
-            workStartF = s.workStartFemale
-            toleranceF = s.toleranceFemale.toString()
-            workStartM = s.workStartMale
-            toleranceM = s.toleranceMale.toString()
-            bonus = s.monthlyBonus.toString()
-            deduction = s.lateDeduction.toString()
-            deductAbsent = s.deductAbsent
-            workDays = s.workDays
-            storeLatLon = if (s.storeLat != null && s.storeLon != null) GeoRule.formatCoord(s.storeLat, s.storeLon) else ""
-            radius = s.radiusMeters.toString()
-            requireLocation = s.requireLocation
-            requireBiometric = s.requireBiometric
+            fillForm(snap.settings)
+            loadedVersion = snap.appliedVersion
             loaded = true
+        } else if (snap.appliedVersion != loadedVersion) {
+            loadedVersion = snap.appliedVersion
+            if (snap.settings != loadedFrom) {
+                fillForm(snap.settings)
+                onMessage("Pengaturan diperbarui dari dashboard owner")
+            }
+        }
+    }
+
+    suspend fun refreshPhotoStorage() {
+        photoStorage = runCatching { repository.photoStorage() }.getOrNull()
+    }
+    LaunchedEffect(Unit) { refreshPhotoStorage() }
+
+    fun cleanupPhotosNow() {
+        cleaning = true
+        scope.launch {
+            val r = runCatching { repository.cleanupOldPhotos() }.getOrNull()
+            refreshPhotoStorage()
+            cleaning = false
+            val days = snapshot?.settings?.photoRetentionDays ?: PhotoRetention.DEFAULT_DAYS
+            onMessage(
+                when {
+                    r == null -> "Gagal menghapus foto lama. Coba lagi."
+                    r.photosDeleted + r.orphansDeleted > 0 ->
+                        "Dihapus ${r.photosDeleted + r.orphansDeleted} foto lama (${PhotoRetention.formatSize(r.photoBytesFreed)}). Data presensi tetap ada."
+                    days <= 0 -> "Foto disimpan selamanya (batas 0 hari): tidak ada foto yang dihapus."
+                    else -> "Tidak ada foto yang lebih lama dari $days hari."
+                },
+            )
         }
     }
 
@@ -150,39 +199,47 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
 
     fun save() {
         if (LateRule.parseWorkStart(workStartF) == null || LateRule.parseWorkStart(workStartM) == null) {
-            onMessage("Jam masuk harus format HH:mm, contoh ${Site.workStartFemale}"); return
+            onMessage("Jam masuk harus format HH:mm (00:00–23:59), contoh ${Site.workStartFemale}"); return
         }
         val tolF = toleranceF.trim().toIntOrNull()
         val tolM = toleranceM.trim().toIntOrNull()
         val bon = bonus.trim().toLongOrNull()
         val ded = deduction.trim().toLongOrNull()
-        if (tolF == null || tolF < 0 || tolM == null || tolM < 0) { onMessage("Toleransi harus angka ≥ 0"); return }
-        if (bon == null || bon < 0) { onMessage("Uang rajin harus angka ≥ 0"); return }
-        if (ded == null || ded < 0) { onMessage("Potongan harus angka ≥ 0 (0 = otomatis)"); return }
+        if (tolF == null || tolF !in 0..SettingsJson.MAX_TOLERANCE || tolM == null || tolM !in 0..SettingsJson.MAX_TOLERANCE) {
+            onMessage("Toleransi harus 0–${SettingsJson.MAX_TOLERANCE} menit"); return
+        }
+        if (bon == null || bon !in 0L..SettingsJson.MAX_MONEY) { onMessage("Uang rajin harus angka 0–${RecapFormatter.rupiah(SettingsJson.MAX_MONEY)}"); return }
+        if (ded == null || ded !in 0L..SettingsJson.MAX_MONEY) { onMessage("Potongan harus angka ≥ 0 (0 = otomatis)"); return }
         if (workDays.isEmpty()) { onMessage("Pilih minimal satu hari kerja"); return }
         val latLon = if (storeLatLon.isBlank()) null else GeoRule.parseLatLon(storeLatLon)
         if (storeLatLon.isNotBlank() && latLon == null) { onMessage("Koordinat harus \"lat, lon\", contoh -6.200000, 106.816666"); return }
         val rad = radius.trim().toIntOrNull()
-        if (rad == null || rad < 10) { onMessage("Radius minimal 10 meter"); return }
+        if (rad == null || rad < SettingsJson.MIN_RADIUS) { onMessage("Radius minimal ${SettingsJson.MIN_RADIUS} meter"); return }
+        if (rad > SettingsJson.MAX_RADIUS) { onMessage("Radius maksimal ${SettingsJson.MAX_RADIUS} meter"); return }
+        val keepDays = photoDays.trim().toIntOrNull()
+        if (keepDays == null || !PhotoRetention.isValidDays(keepDays)) {
+            onMessage("Hapus foto: 0 (simpan selamanya) atau ${PhotoRetention.MIN_DAYS}–${PhotoRetention.MAX_DAYS} hari"); return
+        }
         scope.launch {
-            repository.settingsStore.save(
-                AppSettings(
-                    workStartFemale = workStartF.trim(),
-                    toleranceFemale = tolF,
-                    workStartMale = workStartM.trim(),
-                    toleranceMale = tolM,
-                    monthlyBonus = bon,
-                    lateDeduction = ded,
-                    deductAbsent = deductAbsent,
-                    workDays = workDays,
-                    storeLat = latLon?.first,
-                    storeLon = latLon?.second,
-                    radiusMeters = rad,
-                    requireLocation = requireLocation,
-                    requireBiometric = requireBiometric,
-                ),
+            val newSettings = AppSettings(
+                workStartFemale = workStartF.trim(),
+                toleranceFemale = tolF,
+                workStartMale = workStartM.trim(),
+                toleranceMale = tolM,
+                monthlyBonus = bon,
+                lateDeduction = ded,
+                deductAbsent = deductAbsent,
+                workDays = workDays,
+                storeLat = latLon?.first,
+                storeLon = latLon?.second,
+                radiusMeters = rad,
+                requireLocation = requireLocation,
+                requireBiometric = requireBiometric,
+                photoRetentionDays = keepDays,
             )
-            onMessage("Pengaturan disimpan")
+            loadedFrom = newSettings
+            repository.saveSettingsByOwner(newSettings)
+            onMessage(if (cloudLinked) "Pengaturan disimpan; dikirim ke dashboard saat ada internet" else "Pengaturan disimpan")
         }
     }
 
@@ -206,6 +263,12 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
+            if (cloudLinked) {
+                Text(
+                    "Pengaturan di bawah ini juga bisa diubah dari dashboard owner; yang terakhir disimpan yang berlaku.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
+                )
+            }
             Text("Aturan jam masuk", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
                 "Datang lewat dari jam masuk + toleransi = telat. Menit telat dihitung dari jam masuk.",
@@ -322,6 +385,31 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
                 Switch(checked = requireLocation, onCheckedChange = { requireLocation = it })
             }
 
+            Text("Foto selfie di HP", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                "Supaya memori ${Site.device} tidak penuh, foto selfie yang lebih lama dari batas ini dihapus otomatis dari HP (dicek tiap hari). " +
+                    "Data presensinya (jam, status, koordinat) tetap ada di rekap.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = photoDays, onValueChange = { photoDays = it.filter(Char::isDigit).take(4) },
+                label = { Text("Hapus foto selfie setelah (hari)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                supportingText = { Text("0 = simpan selamanya, selain itu ${PhotoRetention.MIN_DAYS}–${PhotoRetention.MAX_DAYS} hari. Bawaan ${PhotoRetention.DEFAULT_DAYS} hari (± 2 bulan).") },
+            )
+            Text(
+                photoStorage?.let { "Foto tersimpan di HP: ${it.count} foto · ${PhotoRetention.formatSize(it.bytes)}" } ?: "Menghitung foto tersimpan…",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedButton(onClick = { cleanupPhotosNow() }, enabled = !cleaning, modifier = Modifier.fillMaxWidth()) {
+                Text(if (cleaning) "Menghapus foto lama…" else "Hapus foto lama sekarang")
+            }
+            Text(
+                "Memakai batas yang sudah disimpan" +
+                    (snapshot?.settings?.photoRetentionDays?.let { if (it > 0) " ($it hari)." else " (simpan selamanya)." } ?: "."),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
             Button(onClick = { save() }, modifier = Modifier.fillMaxWidth()) { Text("Simpan pengaturan") }
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
@@ -346,7 +434,7 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
                     val d = runCatching { LocalDate.parse(newHolidayDate.trim()) }.getOrNull()
                     if (d == null) { onMessage("Tanggal harus format yyyy-mm-dd, contoh 2026-12-25"); return@Button }
                     scope.launch {
-                        repository.holidayDao.upsert(Holiday(d.toString(), newHolidayName.trim().ifEmpty { "Libur" }))
+                        repository.addHoliday(Holiday(d.toString(), newHolidayName.trim().take(SettingsJson.MAX_HOLIDAY_NAME).ifEmpty { "Libur" }))
                         newHolidayDate = ""; newHolidayName = ""
                         onMessage("Hari libur ditambahkan")
                     }
@@ -361,7 +449,7 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Text(LocalDate.parse(h.date).shortLabel() + " " + h.date.take(4), Modifier.width(140.dp))
                                 Text(h.name, Modifier.weight(1f))
-                                IconButton(onClick = { scope.launch { repository.holidayDao.delete(h) } }) {
+                                IconButton(onClick = { scope.launch { repository.removeHoliday(h) } }) {
                                     Icon(Icons.Filled.Delete, contentDescription = "Hapus")
                                 }
                             }
@@ -408,7 +496,8 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
                     "• Waktu diambil dari jam ${Site.device}. Pastikan jam HP otomatis (dari jaringan).\n" +
                     "• Koordinat GPS dibakar ke foto. Aplikasi fake GPS terdeteksi dan ditolak.\n" +
                     "• PIN owner yang lupa hanya bisa direset dengan menghapus data aplikasi (semua presensi ikut hilang), jadi ekspor dulu.\n" +
-                    "• Foto tersimpan di dalam aplikasi (folder privat). Menghapus aplikasi = menghapus semua data. Ekspor rekap tiap bulan.",
+                    "• Foto tersimpan di dalam aplikasi (folder privat) dan dihapus otomatis setelah batas hari di atas; data presensinya tetap ada. Menghapus aplikasi = menghapus semua data. Ekspor rekap tiap bulan.\n" +
+                    "• Bila tersambung ke dashboard owner, yang dikirim hanya data presensi (jam, status, koordinat GPS), tanpa foto.",
                 style = MaterialTheme.typography.bodySmall,
             )
             Spacer(Modifier.height(24.dp))

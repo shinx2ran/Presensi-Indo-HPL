@@ -71,7 +71,7 @@ android {
     }
     buildFeatures {
         compose = true
-        buildConfig = true // BuildConfig.VERSION_CODE / FLAVOR dipakai pemeriksa pembaruan OTA
+        buildConfig = true // BuildConfig.VERSION_CODE / VERSION_NAME / FLAVOR dipakai pembaruan OTA dan sinkron dashboard
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -108,13 +108,8 @@ dependencies {
     implementation(libs.androidx.exifinterface)
     implementation(libs.play.services.location)
 
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.firestore)
-    implementation(libs.firebase.auth)
+    // Sinkron ke dashboard owner (Supabase) memakai HttpURLConnection + org.json bawaan Android: tanpa SDK tambahan.
     implementation(libs.androidx.work.runtime.ktx)
-    implementation(libs.kotlinx.coroutines.play.services)
-    // Firestore membawa stub kosong "listenablefuture" yang menutupi kelas asli yang dipakai CameraX.
-    implementation(libs.guava)
 
     testImplementation(libs.junit)
     testImplementation(libs.org.json) // org.json di unit test JVM (di HP sudah bawaan Android)

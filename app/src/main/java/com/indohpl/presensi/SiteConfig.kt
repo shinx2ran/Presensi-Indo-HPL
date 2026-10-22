@@ -23,8 +23,8 @@ data class SiteConfig(
     val stampFooter: String,
     /** Petunjuk radius di Pengaturan. */
     val radiusHint: String,
-    /** Contoh nama proyek Firebase (placeholder di Pengaturan). */
-    val firebaseProjectHint: String,
+    /** Nama HP bawaan saat menghubungkan ke dashboard owner, mis. "HP Laundry" (bisa diganti di Pengaturan). */
+    val defaultDeviceLabel: String,
     /** Karyawan awal. Dimasukkan ke database setiap aplikasi dibuka; yang sudah ada (id sama) tidak diubah. */
     val seedEmployees: List<Employee>,
     /** Jam masuk & toleransi bawaan (bisa diubah owner di Pengaturan). */

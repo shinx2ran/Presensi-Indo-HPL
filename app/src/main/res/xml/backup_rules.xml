@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 6–11: cadangan Google tidak menyertakan pengaturan (kunci HP untuk dashboard, PIN owner).
+     HP baru hasil pulihkan cadangan harus dihubungkan ulang dengan kode baru, supaya dua HP tidak memakai kunci yang sama. -->
+<full-backup-content>
+    <exclude domain="file" path="datastore/settings.preferences_pb" />
+</full-backup-content>

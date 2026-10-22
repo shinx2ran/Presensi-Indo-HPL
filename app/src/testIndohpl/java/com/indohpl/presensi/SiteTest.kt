@@ -21,5 +21,7 @@ class SiteTest {
         assertEquals(5, s.toleranceMale)
         assertFalse(s.sameRuleForAll)
         assertEquals("Perempuan 07:45 (toleransi 10 mnt) · Laki-laki 08:00 (toleransi 5 mnt)", s.rulesText())
+        assertEquals(60, s.photoRetentionDays)
+        assertEquals("HP Kasir", Site.defaultDeviceLabel)
     }
 }

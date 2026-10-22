@@ -36,8 +36,6 @@ import com.indohpl.presensi.data.AppSettings
 import com.indohpl.presensi.data.Repository
 import com.indohpl.presensi.domain.BonusCalculator
 import com.indohpl.presensi.domain.RecapFormatter
-import com.indohpl.presensi.ui.SourceChips
-import com.indohpl.presensi.ui.loadCloudMonth
 import com.indohpl.presensi.util.Export
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -56,18 +54,9 @@ fun ExportPanel(repository: Repository, onMessage: (String) -> Unit) {
     val employees by repository.observeEmployees().collectAsStateWithLifecycle(emptyList())
     val holidays by repository.observeHolidays().collectAsStateWithLifecycle(emptyList())
     val settings by repository.settingsStore.settings.collectAsStateWithLifecycle(AppSettings())
-    val cloudConfig by repository.settingsStore.cloud.collectAsStateWithLifecycle(null)
-    val cloudAvailable = cloudConfig?.let { it.enabled && it.isComplete } == true
-    var useCloud by remember { mutableStateOf(false) }
 
     suspend fun buildAll(): Triple<String, String, String>? {
-        val records = if (useCloud) {
-            val m = loadCloudMonth(context, repository, month)
-            if (m.error != null) { onMessage(m.error); return null }
-            m.records
-        } else {
-            repository.getMonth(month)
-        }
+        val records = repository.getMonth(month)
         val recaps = BonusCalculator.recap(
             ym = month, today = LocalDate.now(), employees = employees.filter { it.active }, records = records,
             workDayOfWeeks = settings.workDays, holidays = holidays.map { LocalDate.parse(it.date) }.toSet(),
@@ -83,7 +72,6 @@ fun ExportPanel(repository: Repository, onMessage: (String) -> Unit) {
 
     Column {
         Text("Ekspor rekap bulanan", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        if (cloudAvailable) SourceChips(useCloud = useCloud, onChange = { useCloud = it })
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             IconButton(onClick = { month = month.minusMonths(1) }) {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Bulan sebelumnya")
