@@ -1,0 +1,21 @@
+{
+  "id": "./",
+  "name": "Presensi Owner — EG Kost & Indo HPL",
+  "short_name": "Presensi Owner",
+  "description": "Dashboard owner presensi karyawan: status hari ini, rekap uang rajin, karyawan, pengaturan, dan HP presensi.",
+  "lang": "id",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F4F7F5",
+  "theme_color": "#1B7F4E",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

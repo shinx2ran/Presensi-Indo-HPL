@@ -1,0 +1,61 @@
+name: Dashboard owner (GitHub Pages)
+
+# Dashboard owner = halaman statis di dashboard/ (tanpa build). Workflow ini menjalankan tes logika rekap,
+# lalu menerbitkan isi dashboard/ (tanpa tests/) ke branch "gh-pages".
+# Sekali saja di GitHub: Settings > Pages > Build and deployment > Source "Deploy from a branch",
+# Branch "gh-pages" folder "/ (root)". Alamatnya: https://<pemilik>.github.io/<repo>/
+on:
+  push:
+    paths:
+      - "dashboard/**"
+      - ".github/workflows/dashboard.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dashboard-gh-pages
+  cancel-in-progress: true
+
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Port JS dari BonusCalculator/RecapFormatter harus sama dengan aplikasi Android.
+      # Catatan: di Node 22 "node --test <folder>/" menganggap folder sebagai berkas; pakai pola glob.
+      - name: Tes logika rekap (node --test)
+        run: node --test "dashboard/tests/*.test.mjs"
+
+      # Seperti langkah apk-build di android.yml: branch yatim, force push. Disalin dulu ke folder bersih
+      # supaya "git add -A" hanya berisi berkas dashboard (tanpa tests/ dan tanpa berkas lain dari repo).
+      - name: Publish ke branch gh-pages
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SITE="$RUNNER_TEMP/gh-pages-site"
+          rm -rf "$SITE"
+          mkdir -p "$SITE"
+          cp -a dashboard/. "$SITE/"
+          rm -rf "$SITE/tests"
+          # Versi service worker = commit ini, supaya HP owner langsung dapat versi baru ("Dashboard diperbarui").
+          sed -i "s/__BUILD__/${GITHUB_SHA::7}/g" "$SITE/sw.js"
+          grep -q "${GITHUB_SHA::7}" "$SITE/sw.js"
+          test -f "$SITE/index.html"
+          test -f "$SITE/.nojekyll"
+          cd "$SITE"
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Dashboard owner dari $GITHUB_SHA ($GITHUB_REF_NAME)"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+          echo "Diterbitkan: https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/"
