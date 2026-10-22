@@ -4,7 +4,7 @@ Aplikasi Android untuk mencatat presensi (jam masuk) karyawan.
 Setiap presensi diverifikasi dengan **biometrik HP** lalu **selfie berstempel waktu + koordinat GPS**, dan hanya sah bila HP berada di **lokasi kerja** (toko / kost).
 Aplikasi menghitung **uang rajin** bulanan otomatis dan bisa mengekspor rekap untuk ditempel ke Claude.
 
-Satu basis kode menghasilkan **dua aplikasi terpisah** (dua *product flavor* Gradle). Keduanya bisa dipasang berdampingan di satu HP karena package name-nya berbeda; data, PIN owner, dan proyek Firebase-nya terpisah.
+Satu basis kode menghasilkan **dua aplikasi terpisah** (dua *product flavor* Gradle). Keduanya bisa dipasang berdampingan di satu HP karena package name-nya berbeda; data dan PIN owner-nya terpisah; di cloud datanya dipisah per tempat.
 
 | | Presensi Indo HPL | Presensi EG Kost |
 |---|---|---|
@@ -103,13 +103,28 @@ Kalau ingin potongan tetap (misal Rp 10.000 per telat), isi angka itu di *Potong
 
 PIN owner (4–8 angka) dibuat saat tab Pengaturan pertama kali dibuka. Disimpan sebagai hash (tidak bisa dibaca dari file). Salah 5 kali = terkunci 30 detik. Pindah tab = terkunci lagi. PIN yang lupa hanya bisa direset dengan menghapus data aplikasi.
 
-## Sinkronisasi cloud (opsional, gratis)
+## Dashboard owner + sinkron cloud (hybrid, gratis)
 
-Aplikasi bisa mengirim setiap presensi (termasuk foto kecil) ke **Firebase Firestore** milik owner, paket Spark (gratis, tanpa kartu kredit).
-Owner memasang APK yang sama di HP-nya, memasukkan data Firebase yang sama, lalu di tab Rekap memilih sumber **Cloud**.
-Gunakan **satu proyek Firebase per aplikasi** (Indo HPL dan EG Kost terpisah) supaya datanya tidak bercampur.
-Pengiriman berjalan di latar (WorkManager): kalau internet mati, antre dan dikirim ulang otomatis.
-Panduan lengkap langkah demi langkah: [docs/FIREBASE.md](docs/FIREBASE.md).
+```
+HP laundry / HP kasir                      Supabase (cloud, gratis)               Owner, dari mana saja
+─────────────────────                      ────────────────────────               ─────────────────────
+Aplikasi Android (absen)                   presensi TANPA foto                    Dashboard (PWA di browser)
+ · selfie + GPS + tolak fake GPS   ──▶     (jam, status, lat/lon, jarak)          · presensi hari ini + status HP
+ · tetap jalan tanpa internet     ◀──      pengaturan per tempat          ◀──▶    · rekap, uang rajin, ekspor
+ · tarik pengaturan & karyawan             daftar karyawan                        · ubah aturan, libur, lokasi, karyawan
+```
+
+* **Foto selfie tidak pernah dikirim ke cloud.** Yang dikirim: karyawan, tanggal, jam masuk, status, menit telat, koordinat, jarak ke titik lokasi, di lokasi atau tidak.
+* **Dashboard owner:** https://shinx2ran.github.io/Presensi-Indo-HPL/ — dibuka di browser HP/laptop, bisa dipasang ke layar utama (PWA). Masuk dengan kunci owner. Perubahan dashboard langsung berlaku tanpa memperbarui apa pun.
+* **Menghubungkan HP:** dashboard → tab **HP** → *Hubungkan HP baru* → muncul kode 8 huruf (berlaku 15 menit). Di HP: **Pengaturan** (PIN owner) → **Sinkronisasi cloud** → isi kode → **Hubungkan**.
+* **Pengaturan dari jauh:** jam masuk, toleransi, uang rajin, hari kerja, hari libur, lokasi + radius, wajib lokasi/biometrik, lama simpan foto, dan daftar karyawan bisa diubah di dashboard. HP menerapkannya saat sinkron (saat aplikasi dibuka, setelah absen, dan tiap jam). Perubahan dari Pengaturan di HP juga dikirim ke dashboard; yang terakhir disimpan yang berlaku.
+* **Tanpa internet:** presensi tetap tercatat di HP dan dikirim otomatis saat internet kembali.
+* Satu proyek Supabase (`presensi-karyawan`) untuk kedua tempat; data EG Kost dan Indo HPL dipisah. Detail teknis: [docs/CLOUD_API.md](docs/CLOUD_API.md).
+* Paket gratis Supabase menidurkan proyek setelah 7 hari tanpa aktivitas. HP yang tersambung sinkron tiap jam, jadi proyek tetap aktif selama ada HP yang menyala dan online. Kalau tertidur, tidak ada data yang hilang: presensi menunggu di HP sampai proyek dibangunkan (satu klik di dashboard Supabase).
+
+## Foto selfie dihapus otomatis
+
+Foto selfie hanya disimpan di HP sebagai bukti, dan memakan memori. Aplikasi menghapus otomatis foto yang lebih tua dari **60 hari** (bisa diubah: Pengaturan di HP atau dashboard, 0 = simpan selamanya, selain itu 7–3650 hari). Data presensinya (jam, status, lokasi) tetap ada; hanya file fotonya yang dihapus, dan menu *Lihat foto* tidak muncul lagi untuk hari itu. Pembersihan berjalan sehari sekali dan saat aplikasi dibuka; di Pengaturan ada tombol **Hapus foto lama sekarang** dan info jumlah/ukuran foto.
 
 ## Rekap & ekspor ke Claude
 
@@ -190,13 +205,15 @@ app/src/main/java/com/indohpl/presensi/
 ├── PresensiApp.kt            Application: membuat Repository, seed karyawan dari Site
 ├── MainActivity.kt           FragmentActivity (dibutuhkan BiometricPrompt) + Compose
 ├── data/                     Room (Employee + bagian kerja, AttendanceRecord, Holiday), DataStore settings, Repository
-├── cloud/                    CloudMapper (Firestore <-> record), FirebaseCloud (SDK), CloudSync (WorkManager)
+├── cloud/                    CloudEndpoint, SupabaseRpc (HTTP), CloudMapper (JSON), CloudSync (WorkManager: kirim, tarik pengaturan)
 ├── domain/                   Logika murni Kotlin: LateRule, GeoRule (jarak/radius), BonusCalculator, RecapFormatter (diuji unit test)
 ├── ui/                       Compose: Beranda, Absen (biometrik+kamera), Rekap, Pengaturan
 └── util/                     Biometric, LocationHelper (GPS), PhotoStamper (stempel foto), Export (share/clipboard)
 app/src/indohpl/              Varian Indo HPL: Site.kt (konfigurasi), strings.xml (nama aplikasi), colors.xml (warna ikon)
 app/src/egkost/               Varian EG Kost: Site.kt, strings.xml, colors.xml
 app/src/test/                 Unit test bersama; app/src/testIndohpl & testEgkost memeriksa konfigurasi tiap varian
+dashboard/                    PWA dashboard owner (HTML/JS tanpa build), diterbitkan ke branch gh-pages; tests/ = node --test
+supabase/migrations/          Skema database cloud (tabel + RPC berkunci)
 ```
 
 ### Menambah tempat kerja baru
