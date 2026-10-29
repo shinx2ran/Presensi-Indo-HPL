@@ -88,6 +88,8 @@ Aplikasi mandiri, tanpa server. Supaya HP tidak penuh dan data lama tidak menump
 
 Pengecekan berjalan saat aplikasi dibuka dan sekali sehari di latar (WorkManager). Batas bulan bisa diubah owner di Pengaturan (1 sampai 24), termasuk tombol **Bersihkan sekarang**. Ekspor rekap sebelum bulannya terhapus.
 
+Pengaman: hapus **otomatis** ditunda bila absen terakhir lebih dari 35 hari lalu (misalnya jam HP melompat maju atau HP lama tidak dipakai). Pembersihan manual tetap bisa.
+
 ## Rekap & ekspor ke Claude
 
 Tab **Rekap** menampilkan per karyawan: hari kerja, hadir, tepat, telat, izin, sakit, alpa, total potongan, uang rajin.
@@ -107,13 +109,37 @@ Tombol **Salin teks** menyalin rekap Markdown ke clipboard.
 
 Cara termudah: buka link ini di browser HP kasir, file APK langsung terunduh:
 
-**https://github.com/shinx2ran/Presensi-Indo-HPL/raw/apk-build/PresensiIndoHPL.apk**
+**https://github.com/shinx2ran/Presensi-Indo-HPL/raw/apk-indohpl/PresensiIndoHPL.apk**
 
-Link itu selalu berisi build terbaru. Setiap push ke GitHub menjalankan workflow **Build APK** (`.github/workflows/android.yml`) yang membangun APK, menyimpannya ke branch `apk-build`, dan juga sebagai artifact di tab Actions.
+Link itu selalu berisi build terbaru aplikasi Indo HPL (branch `apk-indohpl`). Branch `apk-build` milik aplikasi **EG Kost** yang dikerjakan di sesi lain, dan tidak disentuh lagi oleh workflow ini.
 
-1. Unduh APK lewat link di atas (atau tab **Actions** → run terbaru → **Artifacts**).
+1. Unduh APK lewat link di atas (atau tab **Actions** → filter Branch `claude/employee-attendance-app-9b9dqg` → run terbaru → **Artifacts** → `PresensiIndoHPL-2.0.x`).
+
+   > **Jangan** pakai link lama `.../raw/apk-build/PresensiIndoHPL.apk` atau artifact bernama `presensi-indo-hpl-debug`. Isinya aplikasi lain dengan nama paket sama. Kalau Android bilang "aplikasi tidak terpasang", **jangan uninstall** aplikasi 2.0.x, karena semua data akan hilang.
 2. Ketuk file APK di HP kasir, izinkan "instal dari sumber tidak dikenal", instal.
 3. Buka aplikasi → beri izin kamera dan lokasi saat diminta. Nyalakan **Lokasi** di HP (mode akurasi tinggi).
+
+### Kunci tanda tangan permanen (penting untuk pembaruan)
+
+Mulai versi **2.0.x**, APK Indo HPL ditandatangani satu kunci tetap (sertifikat SHA-256 `97e5c5e2…c51861`). Karena itu pembaruan berikutnya bisa **dipasang menimpa** dan data tetap ada. Nomor versi naik otomatis (versionCode = 1000 + nomor run CI) dan terlihat di bagian bawah Pengaturan.
+
+Kunci **tidak** disimpan di repo (repo ini publik). Owner menyimpan file kuncinya sendiri. Supaya CI bisa langsung menerbitkan APK siap pasang, isi dua secret di GitHub (Settings → Secrets and variables → Actions → New repository secret):
+
+| Nama secret | Isi |
+|---|---|
+| `INDOHPL_KEYSTORE_B64` | isi file kunci dalam base64 (diberikan terpisah, jangan dibagikan) |
+| `INDOHPL_KEYSTORE_PASSWORD` | kata sandi kunci |
+
+Tanpa secret, CI hanya menyimpan bahan build tak-terpasang di branch `apk-indohpl-staging` (file `.bin`); bahan itu harus ditandatangani dulu dengan kunci permanen sebelum diberikan ke HP. CI menolak menerbitkan APK yang kuncinya bukan kunci permanen.
+
+Versi lama (1.0.0 dan 1.x/1.2.x) memakai kunci acak per build, jadi Android **menolak** menimpanya dengan 2.0.x. Pindah sekali saja:
+
+1. Di aplikasi lama: ekspor rekap setiap bulan yang ingin disimpan (Pengaturan → Ekspor → Bagikan file → simpan ke Drive/Files).
+2. Uninstall aplikasi lama, pasang APK 2.0.x.
+3. Pengaturan → buat PIN → **Impor data dari versi lama** → pilih file `presensi_YYYY-MM_detail.csv`. Absen, izin/sakit, telat, dan GPS masuk lagi. Foto selfie tidak ikut.
+4. Atur ulang lokasi toko, hari libur, dan batas simpan data.
+
+**Kalau file kunci hilang**, pembaruan tidak bisa lagi dipasang menimpa (harus uninstall + impor CSV lagi). Simpan dua salinan, misalnya di Google Drive pribadi dan di laptop.
 
 Atau build sendiri di Android Studio (Ladybug atau lebih baru): buka folder proyek → *Build ▸ Build APK(s)*.
 Repo ini sengaja tidak menyertakan `gradlew` (file biner wrapper). Kalau perlu, jalankan `gradle wrapper` sekali (Gradle 8.9 dipakai di CI).
@@ -134,7 +160,7 @@ app/src/main/java/com/indohpl/presensi/
 ├── PresensiApp.kt            Application: membuat Repository, seed karyawan
 ├── MainActivity.kt           FragmentActivity (dibutuhkan BiometricPrompt) + Compose
 ├── data/                     Room (Employee, AttendanceRecord, Holiday), DataStore settings, Repository
-├── domain/                   Logika murni Kotlin: LateRule, GeoRule, Retention (pembersihan), BonusCalculator, RecapFormatter (diuji unit test)
+├── domain/                   Logika murni Kotlin: LateRule, GeoRule, Retention, CsvImport, BonusCalculator, RecapFormatter (diuji unit test)
 ├── ui/                       Compose: Beranda, Absen (biometrik+kamera), Rekap, Pengaturan
 └── util/                     Biometric, LocationHelper (GPS), PhotoStamper, Export, CleanupScheduler (hapus data lama harian)
 ```

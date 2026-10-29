@@ -9,6 +9,11 @@ on:
 permissions:
   contents: write
 
+# Satu build per branch pada satu waktu; build lama dibatalkan bila ada push baru.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -27,28 +32,79 @@ jobs:
       - name: Unit tests (logika uang rajin)
         run: gradle --no-daemon testDebugUnitTest
 
+      # Kunci permanen datang dari secret GitHub (tidak pernah disimpan di repo publik).
+      - name: Siapkan kunci tanda tangan permanen
+        env:
+          KEYSTORE_B64: ${{ secrets.INDOHPL_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/indohpl.p12"
+            echo "INDOHPL_KEYSTORE_FILE=$RUNNER_TEMP/indohpl.p12" >> "$GITHUB_ENV"
+            echo "HAS_KEY=1" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Secret INDOHPL_KEYSTORE_B64 belum diisi: APK tidak diterbitkan ke apk-indohpl, hanya bahan tanda tangan ke apk-indohpl-staging."
+            echo "HAS_KEY=0" >> "$GITHUB_ENV"
+          fi
+
       - name: Build debug APK
+        env:
+          INDOHPL_KEYSTORE_PASSWORD: ${{ secrets.INDOHPL_KEYSTORE_PASSWORD }}
         run: gradle --no-daemon assembleDebug
 
+      # Pastikan APK ditandatangani kunci permanen Indo HPL. Kalau kunci berubah, Android menolak pembaruan,
+      # jadi build seperti itu TIDAK boleh diterbitkan.
+      - name: Verifikasi kunci tanda tangan permanen
+        if: env.HAS_KEY == '1'
+        env:
+          EXPECTED_SHA256: 97e5c5e2c65bdf65837760d5a5277055e4e7a533d8133ce474426a6470c51861
+        run: |
+          BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          "$BT/apksigner" verify --print-certs app/build/outputs/apk/debug/app-debug.apk | tee /tmp/certs.txt
+          grep -q "certificate SHA-256 digest: $EXPECTED_SHA256" /tmp/certs.txt || { echo "::error::Kunci tanda tangan bukan kunci permanen Indo HPL"; exit 1; }
+
+      # Artifact baru diunggah SETELAH kunci terbukti benar. Nama unik supaya tidak tertukar dengan artifact aplikasi lain.
       - name: Upload APK
+        if: env.HAS_KEY == '1'
         uses: actions/upload-artifact@v4
         with:
-          name: presensi-indo-hpl-debug
+          name: PresensiIndoHPL-2.0.${{ github.run_number }}
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
-      # Simpan APK ke branch "apk-build" supaya bisa diunduh langsung tanpa membuka Actions:
-      # https://github.com/shinx2ran/Presensi-Indo-HPL/raw/apk-build/PresensiIndoHPL.apk
-      - name: Publish APK ke branch apk-build
-        if: github.event_name == 'push'
+      # Terbitkan APK Indo HPL ke branch "apk-indohpl" (khusus aplikasi ini; branch apk-build milik aplikasi EG Kost
+      # dari sesi lain tidak disentuh). Hanya dari branch utama aplikasi ini.
+      # Link unduh: https://github.com/shinx2ran/Presensi-Indo-HPL/raw/apk-indohpl/PresensiIndoHPL.apk
+      - name: Publish APK ke branch apk-indohpl
+        if: env.HAS_KEY == '1' && github.event_name == 'push' && github.ref == 'refs/heads/claude/employee-attendance-app-9b9dqg'
         run: |
+          # Jangan terbitkan build lama (atau re-run) di atas yang lebih baru: hanya commit teratas branch yang boleh.
+          git fetch --depth=1 origin "$GITHUB_REF_NAME"
+          if [ "$(git rev-parse FETCH_HEAD)" != "$GITHUB_SHA" ]; then echo "Bukan commit terbaru branch; APK tidak diterbitkan"; exit 0; fi
           cp app/build/outputs/apk/debug/app-debug.apk /tmp/PresensiIndoHPL.apk
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout --orphan apk-build
+          git checkout --orphan apk-indohpl
           git rm -rf --quiet .
           cp /tmp/PresensiIndoHPL.apk .
-          printf '# APK Presensi Indo HPL\n\nDibangun dari commit %s (%s).\n\nUnduh: https://github.com/%s/raw/apk-build/PresensiIndoHPL.apk\n' "$GITHUB_SHA" "$GITHUB_REF_NAME" "$GITHUB_REPOSITORY" > README.md
+          printf '# APK Presensi Indo HPL\n\nVersi 2.0.%s, dibangun dari commit %s.\nKunci tanda tangan permanen SHA-256: 97e5c5e2c65bdf65837760d5a5277055e4e7a533d8133ce474426a6470c51861\n\nUnduh: https://github.com/%s/raw/apk-indohpl/PresensiIndoHPL.apk\n' "$GITHUB_RUN_NUMBER" "$GITHUB_SHA" "$GITHUB_REPOSITORY" > README.md
           git add -f PresensiIndoHPL.apk README.md
-          git commit -q -m "APK build dari $GITHUB_SHA"
-          git push -f origin apk-build
+          git commit -q -m "APK Indo HPL 2.0.$GITHUB_RUN_NUMBER dari $GITHUB_SHA"
+          git push -f origin apk-indohpl
+
+      # Tanpa secret: simpan hasil build sebagai BAHAN (bukan .apk, tidak bisa dipasang) supaya bisa ditandatangani
+      # dengan kunci permanen di luar CI, lalu diberikan ke owner. Tidak pernah menyentuh apk-indohpl atau apk-build.
+      - name: Simpan bahan tanda tangan ke apk-indohpl-staging
+        if: env.HAS_KEY != '1' && github.event_name == 'push' && github.ref == 'refs/heads/claude/employee-attendance-app-9b9dqg'
+        run: |
+          git fetch --depth=1 origin "$GITHUB_REF_NAME"
+          if [ "$(git rev-parse FETCH_HEAD)" != "$GITHUB_SHA" ]; then echo "Bukan commit terbaru branch; dilewati"; exit 0; fi
+          cp app/build/outputs/apk/debug/app-debug.apk /tmp/bahan.bin
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan apk-indohpl-staging
+          git rm -rf --quiet .
+          cp /tmp/bahan.bin PresensiIndoHPL-2.0.$GITHUB_RUN_NUMBER-BELUM-DITANDATANGANI.bin
+          printf '# Bahan build Indo HPL 2.0.%s (BUKAN untuk dipasang)\n\nFile ini belum ditandatangani kunci permanen. Jangan dipasang di HP.\nCommit %s.\n' "$GITHUB_RUN_NUMBER" "$GITHUB_SHA" > README.md
+          git add -f ./*.bin README.md
+          git commit -q -m "Bahan Indo HPL 2.0.$GITHUB_RUN_NUMBER dari $GITHUB_SHA"
+          git push -f origin apk-indohpl-staging

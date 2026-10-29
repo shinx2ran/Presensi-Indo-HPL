@@ -1,6 +1,7 @@
 package com.indohpl.presensi.data
 
 import android.content.Context
+import com.indohpl.presensi.domain.CsvImport
 import com.indohpl.presensi.domain.GeoCheck
 import com.indohpl.presensi.domain.Retention
 import com.indohpl.presensi.domain.LateRule
@@ -107,13 +108,76 @@ class Repository(context: Context) {
         record.photoPath?.let { runCatching { File(it).delete() } }
     }
 
+    data class ImportResult(
+        val imported: Int,
+        val duplicates: Int,
+        val unknownNames: Set<String>,
+        val tooOld: Int,
+        val errors: List<String>,
+    )
+
+    /**
+     * Impor catatan dari file CSV detail (ekspor aplikasi versi lama). Dipakai untuk pindah ke APK berkunci
+     * permanen tanpa komputer. Foto tidak ikut (CSV hanya menyimpan nama file). Catatan yang sudah ada
+     * (karyawan + tanggal sama) dilewati; yang lebih lama dari batas simpan juga dilewati supaya tidak
+     * langsung terhapus lagi oleh pembersihan otomatis.
+     */
+    suspend fun importCsv(files: List<Pair<String, String>>, today: LocalDate = LocalDate.now()): ImportResult {
+        val employees = employeeDao.getAll()
+        val byName = employees.associateBy { it.name.trim().lowercase() }
+        val cutoff = Retention.cutoffDate(today, settingsStore.current().retentionMonths)
+        var imported = 0
+        var duplicates = 0
+        var tooOld = 0
+        val unknown = linkedSetOf<String>()
+        val errors = mutableListOf<String>()
+        files.forEach { (fileName, text) ->
+            val parsed = CsvImport.parse(text)
+            errors += parsed.errors.map { "$fileName: $it" }
+            for (r in parsed.rows) {
+                val emp = byName[r.name.trim().lowercase()]
+                if (emp == null) { unknown += r.name; continue }
+                if (r.date.isBefore(cutoff)) { tooOld++; continue }
+                val time = if (r.timeIn.isNotEmpty()) java.time.LocalTime.parse(r.timeIn) else java.time.LocalTime.MIDNIGHT
+                val id = attendanceDao.insertIgnore(
+                    AttendanceRecord(
+                        employeeId = emp.id,
+                        date = r.date.toString(),
+                        timestamp = r.date.atTime(time).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli(),
+                        timeIn = r.timeIn,
+                        status = r.status,
+                        lateMinutes = r.lateMinutes,
+                        photoPath = null,
+                        note = r.note,
+                        latitude = r.latitude,
+                        longitude = r.longitude,
+                        accuracy = r.accuracy,
+                        distanceMeters = r.distanceMeters,
+                        inLocation = r.inLocation,
+                        locationNote = r.locationNote,
+                    ),
+                )
+                if (id == -1L) duplicates++ else imported++
+            }
+        }
+        return ImportResult(imported, duplicates, unknown, tooOld, errors)
+    }
+
     /**
      * Pembersihan otomatis: hapus catatan (dan fotonya) yang lebih lama dari [AppSettings.retentionMonths].
      * Mengembalikan jumlah catatan yang dihapus.
      */
-    suspend fun cleanupOldData(today: LocalDate = LocalDate.now()): Int {
-        val months = settingsStore.current().retentionMonths
+    suspend fun cleanupOldData(
+        today: LocalDate = LocalDate.now(),
+        months: Int? = null,
+        automatic: Boolean = false,
+    ): Int {
+        val months = months ?: settingsStore.current().retentionMonths
         val cutoff = Retention.cutoffDate(today, months).toString()
+        if (automatic) {
+            val newest = attendanceDao.newestDate()?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+            if (!Retention.shouldAutoClean(today, newest, attendanceDao.monthsBefore(cutoff).size)) return 0
+        }
         val old = attendanceDao.getBefore(cutoff)
         old.forEach { r -> r.photoPath?.let { runCatching { File(it).delete() } } }
         val deleted = attendanceDao.deleteBefore(cutoff)

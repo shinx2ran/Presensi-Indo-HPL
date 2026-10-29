@@ -275,3 +275,102 @@ class RetentionTest {
         assertEquals(YearMonth.of(2026, 8), month)
     }
 }
+
+class AutoCleanGuardTest {
+    @Test
+    fun normalUseCleans() {
+        assertTrue(Retention.shouldAutoClean(LocalDate.of(2026, 12, 1), LocalDate.of(2026, 11, 30)))
+        assertTrue(Retention.shouldAutoClean(LocalDate.of(2026, 12, 1), LocalDate.of(2026, 10, 27))) // tepat 35 hari
+    }
+
+    @Test
+    fun staleOrClockJumpSkips() {
+        assertFalse(Retention.shouldAutoClean(LocalDate.of(2026, 12, 1), LocalDate.of(2026, 10, 26))) // 36 hari
+        assertFalse(Retention.shouldAutoClean(LocalDate.of(2030, 1, 1), LocalDate.of(2026, 10, 29)))  // jam HP melompat
+        assertFalse(Retention.shouldAutoClean(LocalDate.of(2026, 12, 1), null))                        // belum ada data
+    }
+}
+
+class CsvImportTest {
+    private val headerGps = "tanggal,nama,status,jam_masuk,menit_telat,catatan,foto,latitude,longitude,akurasi_m,jarak_toko_m,di_lokasi,ket_lokasi"
+
+    @Test
+    fun parsesCurrentExportFormat() {
+        val csv = "$headerGps\n" +
+            "2026-10-01,Sara,TEPAT,07:50:12,0,,Sara_20261001_075012.jpg,-6.1,106.8,12,30,YA,di lokasi toko\n" +
+            "2026-10-01,Evan,TELAT,08:20:00,20,,Evan.jpg,-6.1,106.8,8,40,TIDAK,di luar lokasi\n" +
+            "2026-10-02,Madi,IZIN,,0,\"acara, keluarga\",,,,,,,\n"
+        val r = CsvImport.parse(csv)
+        assertEquals(emptyList<String>(), r.errors)
+        assertEquals(3, r.rows.size)
+        val sara = r.rows[0]
+        assertEquals(LocalDate.of(2026, 10, 1), sara.date)
+        assertEquals("07:50:12", sara.timeIn)
+        assertEquals(-6.1, sara.latitude!!, 1e-9)
+        assertEquals(30, sara.distanceMeters)
+        assertTrue(sara.inLocation)
+        assertEquals(20, r.rows[1].lateMinutes)
+        assertFalse(r.rows[1].inLocation)
+        assertEquals("acara, keluarga", r.rows[2].note)
+        assertEquals("", r.rows[2].timeIn)
+    }
+
+    @Test
+    fun parsesOldFormatWithoutGpsAndOtherPlaceColumn() {
+        val old = "tanggal,nama,status,jam_masuk,menit_telat,catatan,foto\n2026-09-29,Roni,TEPAT,07:59:00,0,,Roni.jpg\n"
+        val r = CsvImport.parse(old)
+        assertEquals(1, r.rows.size)
+        assertEquals(null, r.rows[0].latitude)
+        val kos = "tanggal,nama,status,jam_masuk,menit_telat,catatan,foto,latitude,longitude,akurasi_m,jarak_kos_m,di_lokasi,ket_lokasi\n" +
+            "2026-10-05,Sara,TEPAT,07:40:00,0,,,1.0,2.0,5,15,YA,ok\n"
+        assertEquals(15, CsvImport.parse(kos).rows.single().distanceMeters)
+    }
+
+    @Test
+    fun roundTripWithExporter() {
+        val sara = Employee(1, "Sara", "P")
+        val ym = YearMonth.of(2026, 10)
+        val records = listOf(
+            AttendanceRecord(employeeId = 1, date = "2026-10-01", timestamp = 0, timeIn = "07:50:00", status = Status.TEPAT, lateMinutes = 0,
+                photoPath = "/x/a.jpg", note = "kata \"kutip\", koma", latitude = -6.2, longitude = 106.8, accuracy = 9f,
+                distanceMeters = 12, inLocation = true, locationNote = "di lokasi toko"),
+        )
+        val r = CsvImport.parse(RecapFormatter.detailCsv(ym, listOf(sara), records)).rows.single()
+        assertEquals("kata \"kutip\", koma", r.note)
+        assertEquals("07:50:00", r.timeIn)
+        assertEquals(12, r.distanceMeters)
+        assertTrue(r.inLocation)
+    }
+
+    @Test
+    fun reportsBadRowsAndWrongFiles() {
+        val csv = "$headerGps\n2026-13-01,Sara,TEPAT,07:50:00,0,,,,,,,,\n2026-10-01,Sara,HADIR,07:50:00,0,,,,,,,,\n2026-10-01,Sara,TEPAT,jam,0,,,,,,,,\n\n"
+        val r = CsvImport.parse(csv)
+        assertEquals(0, r.rows.size)
+        assertEquals(3, r.errors.size)
+        assertEquals(1, CsvImport.parse("bulan,nama,hadir\n2026-10,Sara,3\n").errors.size) // file rekap, bukan detail
+        assertEquals(1, CsvImport.parse("").errors.size)
+    }
+
+    @Test
+    fun handlesBomAndCrlf() {
+        val r = CsvImport.parse("﻿tanggal,nama,status,jam_masuk\r\n2026-10-01,Sara,TEPAT,07:50\r\n")
+        assertEquals("07:50:00", r.rows.single().timeIn)
+    }
+}
+
+class AutoCleanExtraGuardTest {
+    @Test
+    fun moreThanOneMonthAtOnceSkips() {
+        assertTrue(Retention.shouldAutoClean(LocalDate.of(2026, 12, 1), LocalDate.of(2026, 11, 30), 1))
+        assertFalse(Retention.shouldAutoClean(LocalDate.of(2026, 12, 1), LocalDate.of(2026, 11, 30), 2))
+    }
+
+    @Test
+    fun futureDatedRecordSkips() {
+        // Satu absen tercatat saat jam HP di 2030, lalu jam dibetulkan: tetap tidak hapus otomatis.
+        assertFalse(Retention.shouldAutoClean(LocalDate.of(2026, 12, 1), LocalDate.of(2030, 1, 1), 0))
+        // Jam masih di 2030: catatan asli 2026 berarti >1 bulan sekaligus -> lewati.
+        assertFalse(Retention.shouldAutoClean(LocalDate.of(2030, 1, 1), LocalDate.of(2030, 1, 1), 3))
+    }
+}

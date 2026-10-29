@@ -55,7 +55,7 @@ fun RetentionSection(repository: Repository, onMessage: (String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Pembersihan otomatis", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Text(
-            "Aplikasi menjaga dirinya sendiri: catatan presensi dan foto yang lebih lama dari batas di bawah dihapus otomatis (dicek setiap hari). Ekspor rekap sebelum bulan itu terhapus.",
+            "Aplikasi menjaga dirinya sendiri: catatan presensi dan foto yang lebih lama dari batas di bawah dihapus otomatis (dicek setiap hari). Ekspor rekap sebelum bulan itu terhapus. Pengaman: hapus otomatis ditunda bila absen terakhir lebih dari 35 hari lalu, bila ada absen bertanggal di masa depan (jam HP salah), atau bila lebih dari satu bulan akan terhapus sekaligus. Saat itu gunakan tombol Bersihkan sekarang.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         OutlinedTextField(
@@ -98,7 +98,10 @@ fun RetentionSection(repository: Repository, onMessage: (String) -> Unit) {
                 TextButton(onClick = {
                     confirm = false
                     scope.launch {
-                        val n = repository.cleanupOldData()
+                        // Pakai (dan simpan) batas yang tertulis di dialog, supaya yang dihapus sama dengan yang dijanjikan.
+                        val s = repository.settingsStore.current()
+                        if (s.retentionMonths != m) repository.settingsStore.save(s.copy(retentionMonths = m))
+                        val n = repository.cleanupOldData(months = m)
                         onMessage(if (n > 0) "$n catatan lama dihapus" else "Tidak ada data lama")
                     }
                 }) { Text("Hapus") }

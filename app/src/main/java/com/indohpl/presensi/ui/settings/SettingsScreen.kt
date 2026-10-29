@@ -45,7 +45,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.indohpl.presensi.data.AppSettings
 import com.indohpl.presensi.data.Holiday
 import com.indohpl.presensi.data.Repository
 import com.indohpl.presensi.domain.GeoRule
@@ -153,8 +152,9 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
         val rad = radius.trim().toIntOrNull()
         if (rad == null || rad < 10) { onMessage("Radius minimal 10 meter"); return }
         scope.launch {
+            // copy() dari nilai tersimpan supaya pengaturan di luar form ini (mis. batas simpan data) tidak tertimpa.
             repository.settingsStore.save(
-                AppSettings(
+                repository.settingsStore.current().copy(
                     workStartFemale = workStartF.trim(),
                     toleranceFemale = tolF,
                     workStartMale = workStartM.trim(),
@@ -182,6 +182,10 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             ExportPanel(repository, onMessage)
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+            ImportSection(repository, onMessage)
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
@@ -381,6 +385,13 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
                     "• PIN owner yang lupa hanya bisa direset dengan menghapus data aplikasi (semua presensi ikut hilang), jadi ekspor dulu.\n" +
                     "• Foto tersimpan di dalam aplikasi (folder privat). Menghapus aplikasi = menghapus semua data. Ekspor rekap tiap bulan.",
                 style = MaterialTheme.typography.bodySmall,
+            )
+            val versionName = remember {
+                runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
+            }
+            Text(
+                "Versi aplikasi $versionName",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(24.dp))
         }

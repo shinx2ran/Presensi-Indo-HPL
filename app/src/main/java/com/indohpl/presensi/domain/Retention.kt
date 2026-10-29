@@ -15,6 +15,23 @@ object Retention {
     fun cutoffDate(today: LocalDate, months: Int): LocalDate =
         YearMonth.from(today).minusMonths(months.coerceIn(MIN_MONTHS, MAX_MONTHS).toLong()).atDay(1)
 
+    /** Jika catatan terbaru lebih tua dari ini, pembersihan OTOMATIS dilewati (jam HP salah / aplikasi lama tak dipakai). */
+    const val STALE_DAYS = 35L
+
+    /**
+     * Pengaman pembersihan otomatis. Dalam pemakaian normal ada absen hampir tiap hari, jadi catatan terbaru
+     * paling lama beberapa hari lalu. Kalau catatan terbaru jauh lebih tua dari [today] (jam HP melompat maju,
+     * HP lama tidak dipakai, atau data baru diimpor setelah lama), hapus otomatis ditunda; owner tetap bisa
+     * membersihkan manual dari Pengaturan.
+     */
+    fun shouldAutoClean(today: LocalDate, newestRecordDate: LocalDate?, monthsToDelete: Int = 1): Boolean =
+        newestRecordDate != null &&
+            !newestRecordDate.isBefore(today.minusDays(STALE_DAYS)) &&
+            !newestRecordDate.isAfter(today) &&
+            // Pemakaian normal: tiap tanggal 1 hanya satu bulan yang lewat batas. Lebih dari satu sekaligus
+            // berarti ada yang aneh (jam HP pernah melompat, batas diturunkan) -> tunggu keputusan owner.
+            monthsToDelete <= 1
+
     /** Tanggal pembersihan berikutnya (awal bulan depan) dan bulan yang akan terhapus saat itu. */
     fun nextCleanup(today: LocalDate, months: Int): Pair<LocalDate, YearMonth> {
         val next = YearMonth.from(today).plusMonths(1).atDay(1)

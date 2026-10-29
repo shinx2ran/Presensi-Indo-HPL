@@ -5,6 +5,23 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// Kunci tanda tangan PERMANEN aplikasi Indo HPL (sertifikat SHA-256 97e5c5e2...c51861).
+// Kunci TIDAK disimpan di repo (repo publik). Sumbernya, berurutan:
+//   1. CI: secret GitHub INDOHPL_KEYSTORE_B64 + INDOHPL_KEYSTORE_PASSWORD (didekode workflow ke INDOHPL_KEYSTORE_FILE)
+//   2. Lokal: signing/indohpl.p12 + signing/indohpl.properties (diabaikan git)
+// Tanpa kunci ini build tetap jalan (kunci debug acak), tetapi CI tidak menerbitkannya sebagai APK siap pasang.
+// JANGAN ganti kunci: kunci berbeda = Android menolak pembaruan dan data hanya bisa dipindah lewat impor CSV.
+val signingProps = java.util.Properties().apply {
+    rootProject.file("signing/indohpl.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}
+val permanentKeystore: File? =
+    (System.getenv("INDOHPL_KEYSTORE_FILE")?.let { file(it) } ?: rootProject.file("signing/indohpl.p12")).takeIf { it.exists() }
+val permanentPassword: String? =
+    System.getenv("INDOHPL_KEYSTORE_PASSWORD")?.takeIf { it.isNotEmpty() } ?: signingProps.getProperty("storePassword")
+
+// Nomor versi naik tiap build CI (1000 + nomor run GitHub Actions) supaya Android selalu menganggapnya lebih baru.
+val ciRun: Int? = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()
+
 android {
     namespace = "com.indohpl.presensi"
     compileSdk = 35
@@ -13,13 +30,29 @@ android {
         applicationId = "com.indohpl.presensi"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 1000 + (ciRun ?: 0)
+        versionName = ciRun?.let { "2.0.$it" } ?: "2.0.0-lokal"
         vectorDrawables.useSupportLibrary = true
     }
 
+    signingConfigs {
+        if (permanentKeystore != null && permanentPassword != null) {
+            create("permanent") {
+                storeFile = permanentKeystore
+                storeType = "pkcs12"
+                storePassword = permanentPassword
+                keyAlias = "indohpl"
+                keyPassword = permanentPassword
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfigs.findByName("permanent")?.let { signingConfig = it }
+        }
         release {
+            signingConfigs.findByName("permanent")?.let { signingConfig = it }
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }

@@ -10,3 +10,9 @@
 .cxx/
 *.apk
 *.aab
+
+# Kunci tanda tangan permanen: JANGAN pernah di-commit (repo publik)
+/signing/
+*.p12
+*.jks
+*.keystore

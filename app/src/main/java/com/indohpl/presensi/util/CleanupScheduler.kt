@@ -22,7 +22,7 @@ object CleanupScheduler {
 
 class CleanupWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result = try {
-        val n = (applicationContext as PresensiApp).repository.cleanupOldData()
+        val n = (applicationContext as PresensiApp).repository.cleanupOldData(automatic = true)
         if (n > 0) Log.i("Cleanup", "Menghapus $n catatan lama")
         Result.success()
     } catch (e: Exception) {
