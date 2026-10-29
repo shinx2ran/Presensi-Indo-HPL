@@ -8,15 +8,14 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [Employee::class, AttendanceRecord::class, Holiday::class, CloudDeletion::class],
-    version = 3,
+    entities = [Employee::class, AttendanceRecord::class, Holiday::class],
+    version = 4,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun employeeDao(): EmployeeDao
     abstract fun attendanceDao(): AttendanceDao
     abstract fun holidayDao(): HolidayDao
-    abstract fun cloudDeletionDao(): CloudDeletionDao
 
     companion object {
         @Volatile private var instance: AppDatabase? = null
@@ -41,13 +40,36 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v3 -> v4: fitur cloud dihapus; buang kolom synced dan tabel cloud_deletions. */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS cloud_deletions")
+                db.execSQL(
+                    "CREATE TABLE attendance_new (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, employeeId INTEGER NOT NULL, date TEXT NOT NULL, " +
+                        "timestamp INTEGER NOT NULL, timeIn TEXT NOT NULL, status TEXT NOT NULL, lateMinutes INTEGER NOT NULL, " +
+                        "photoPath TEXT, note TEXT NOT NULL, latitude REAL, longitude REAL, accuracy REAL, distanceMeters INTEGER, " +
+                        "inLocation INTEGER NOT NULL DEFAULT 0, locationNote TEXT NOT NULL DEFAULT '')",
+                )
+                db.execSQL(
+                    "INSERT INTO attendance_new (id, employeeId, date, timestamp, timeIn, status, lateMinutes, photoPath, note, " +
+                        "latitude, longitude, accuracy, distanceMeters, inLocation, locationNote) " +
+                        "SELECT id, employeeId, date, timestamp, timeIn, status, lateMinutes, photoPath, note, " +
+                        "latitude, longitude, accuracy, distanceMeters, inLocation, locationNote FROM attendance",
+                )
+                db.execSQL("DROP TABLE attendance")
+                db.execSQL("ALTER TABLE attendance_new RENAME TO attendance")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_attendance_employeeId_date ON attendance (employeeId, date)")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "presensi.db",
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
             }
     }
 }

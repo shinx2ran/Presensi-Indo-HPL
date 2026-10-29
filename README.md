@@ -77,12 +77,16 @@ Kalau ingin potongan tetap (misal Rp 10.000 per telat), isi angka itu di *Potong
 
 PIN owner (4–8 angka) dibuat saat tab Pengaturan pertama kali dibuka. Disimpan sebagai hash (tidak bisa dibaca dari file). Salah 5 kali = terkunci 30 detik. Pindah tab = terkunci lagi. PIN yang lupa hanya bisa direset dengan menghapus data aplikasi.
 
-## Sinkronisasi cloud (opsional, gratis)
+## Pembersihan otomatis (self-regulating)
 
-Aplikasi bisa mengirim setiap presensi (termasuk foto kecil) ke **Firebase Firestore** milik owner, paket Spark (gratis, tanpa kartu kredit).
-Owner memasang APK yang sama di HP-nya, memasukkan data Firebase yang sama, lalu di tab Rekap memilih sumber **Cloud**.
-Pengiriman berjalan di latar (WorkManager): kalau internet mati, antre dan dikirim ulang otomatis.
-Panduan lengkap langkah demi langkah: [docs/FIREBASE.md](docs/FIREBASE.md).
+Aplikasi mandiri, tanpa server. Supaya HP tidak penuh dan data lama tidak menumpuk, aplikasi **menghapus sendiri** catatan presensi beserta fotonya yang lebih lama dari batas simpan (bawaan **2 bulan**: bulan berjalan + 2 bulan sebelumnya disimpan, lebih lama dihapus).
+
+| Hari ini | Disimpan | Dihapus |
+|---|---|---|
+| 29 Oktober 2026 | Agustus, September, Oktober | Juli dan sebelumnya |
+| 1 November 2026 | September, Oktober, November | Agustus dan sebelumnya |
+
+Pengecekan berjalan saat aplikasi dibuka dan sekali sehari di latar (WorkManager). Batas bulan bisa diubah owner di Pengaturan (1 sampai 24), termasuk tombol **Bersihkan sekarang**. Ekspor rekap sebelum bulannya terhapus.
 
 ## Rekap & ekspor ke Claude
 
@@ -118,7 +122,7 @@ Repo ini sengaja tidak menyertakan `gradlew` (file biner wrapper). Kalau perlu, 
 
 * **Biometrik**: memakai sidik jari / wajah / PIN yang terdaftar di HP kasir. Android **tidak memberi tahu aplikasi sidik jari siapa** yang dipakai, jadi biometrik hanya gerbang "presensi dilakukan di HP kasir dengan persetujuan". Bukti identitas utamanya adalah **selfie**. Kalau ingin, daftarkan sidik jari tiap karyawan di HP kasir (Android biasanya mengizinkan sampai 5 jari).
 * **Waktu** diambil dari jam HP kasir. Pastikan *Tanggal & waktu otomatis* aktif.
-* **Data** (database + foto) tersimpan di folder privat aplikasi. Menghapus aplikasi = menghapus data. Ekspor rekap setiap akhir bulan.
+* **Data** (database + foto) tersimpan di folder privat aplikasi, dan yang lebih lama dari 2 bulan dihapus otomatis. Menghapus aplikasi = menghapus data. Ekspor rekap setiap akhir bulan.
 * **GPS di dalam ruangan** bisa lambat/tidak akurat. Aplikasi menunggu sampai 25 detik dan memakai akurasi GPS sebagai toleransi. Kalau sering gagal, besarkan radius atau matikan "Wajib di lokasi toko".
 * Butuh HP dengan **Google Play Services** (hampir semua HP Android di Indonesia).
 * Minimal Android 8.0 (API 26).
@@ -130,10 +134,9 @@ app/src/main/java/com/indohpl/presensi/
 ├── PresensiApp.kt            Application: membuat Repository, seed karyawan
 ├── MainActivity.kt           FragmentActivity (dibutuhkan BiometricPrompt) + Compose
 ├── data/                     Room (Employee, AttendanceRecord, Holiday), DataStore settings, Repository
-├── cloud/                    CloudMapper (Firestore <-> record), FirebaseCloud (SDK), CloudSync (WorkManager)
-├── domain/                   Logika murni Kotlin: LateRule, GeoRule (jarak/radius), BonusCalculator, RecapFormatter (diuji unit test)
+├── domain/                   Logika murni Kotlin: LateRule, GeoRule, Retention (pembersihan), BonusCalculator, RecapFormatter (diuji unit test)
 ├── ui/                       Compose: Beranda, Absen (biometrik+kamera), Rekap, Pengaturan
-└── util/                     Biometric, LocationHelper (GPS), PhotoStamper (stempel foto), Export (share/clipboard)
+└── util/                     Biometric, LocationHelper (GPS), PhotoStamper, Export, CleanupScheduler (hapus data lama harian)
 ```
 
 Unit test: `gradle testDebugUnitTest` (menguji perhitungan uang rajin dan aturan telat).

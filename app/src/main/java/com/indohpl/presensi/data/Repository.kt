@@ -1,8 +1,8 @@
 package com.indohpl.presensi.data
 
 import android.content.Context
-import com.indohpl.presensi.cloud.CloudSync
 import com.indohpl.presensi.domain.GeoCheck
+import com.indohpl.presensi.domain.Retention
 import com.indohpl.presensi.domain.LateRule
 import java.io.File
 import java.time.LocalDate
@@ -13,13 +13,11 @@ import kotlinx.coroutines.flow.Flow
 
 /** Pintu tunggal ke database + pengaturan. Dibuat sekali di [com.indohpl.presensi.PresensiApp]. */
 class Repository(context: Context) {
-    private val appContext = context.applicationContext
     private val db = AppDatabase.get(context)
     val settingsStore = SettingsStore(context)
     val employeeDao = db.employeeDao()
     val attendanceDao = db.attendanceDao()
     val holidayDao = db.holidayDao()
-    val cloudDeletionDao = db.cloudDeletionDao()
 
     /** Folder foto selfie: <filesDir>/photos/yyyy-MM/ */
     val photoRoot: File = File(context.filesDir, "photos")
@@ -83,7 +81,6 @@ class Repository(context: Context) {
             locationNote = geo?.note ?: "GPS tidak didapat",
         )
         val id = attendanceDao.insert(rec)
-        CloudSync.schedule(appContext)
         return rec.copy(id = id)
     }
 
@@ -102,22 +99,29 @@ class Repository(context: Context) {
                 note = note,
             ),
         )
-        CloudSync.schedule(appContext)
         return true
     }
 
     suspend fun deleteRecord(record: AttendanceRecord) {
         attendanceDao.delete(record)
         record.photoPath?.let { runCatching { File(it).delete() } }
-        if (record.synced) {
-            cloudDeletionDao.insert(CloudDeletion(record.cloudId))
-            CloudSync.schedule(appContext)
-        }
     }
 
-    /** Kirim ulang semua data ke cloud (mis. setelah ganti proyek Firebase). */
-    suspend fun resyncAll() {
-        attendanceDao.markAllUnsynced()
-        CloudSync.schedule(appContext)
+    /**
+     * Pembersihan otomatis: hapus catatan (dan fotonya) yang lebih lama dari [AppSettings.retentionMonths].
+     * Mengembalikan jumlah catatan yang dihapus.
+     */
+    suspend fun cleanupOldData(today: LocalDate = LocalDate.now()): Int {
+        val months = settingsStore.current().retentionMonths
+        val cutoff = Retention.cutoffDate(today, months).toString()
+        val old = attendanceDao.getBefore(cutoff)
+        old.forEach { r -> r.photoPath?.let { runCatching { File(it).delete() } } }
+        val deleted = attendanceDao.deleteBefore(cutoff)
+        holidayDao.deleteBefore(cutoff)
+        // Folder foto per bulan yang sudah kosong / lebih lama dari batas ikut dibuang.
+        photoRoot.listFiles()?.forEach { dir ->
+            if (dir.isDirectory && dir.name < cutoff.take(7)) dir.deleteRecursively()
+        }
+        return deleted
     }
 }

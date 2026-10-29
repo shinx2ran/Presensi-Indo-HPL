@@ -52,29 +52,15 @@ interface AttendanceDao {
     @Delete
     suspend fun delete(record: AttendanceRecord)
 
-    @Query("SELECT * FROM attendance WHERE synced = 0 ORDER BY timestamp")
-    suspend fun getUnsynced(): List<AttendanceRecord>
+    /** Catatan sebelum tanggal tertentu (untuk pembersihan otomatis). */
+    @Query("SELECT * FROM attendance WHERE date < :date")
+    suspend fun getBefore(date: String): List<AttendanceRecord>
 
-    @Query("SELECT COUNT(*) FROM attendance WHERE synced = 0")
-    fun observeUnsyncedCount(): Flow<Int>
+    @Query("DELETE FROM attendance WHERE date < :date")
+    suspend fun deleteBefore(date: String): Int
 
-    @Query("UPDATE attendance SET synced = 1 WHERE id = :id")
-    suspend fun markSynced(id: Long)
-
-    @Query("UPDATE attendance SET synced = 0")
-    suspend fun markAllUnsynced()
-}
-
-@Dao
-interface CloudDeletionDao {
-    @Query("SELECT * FROM cloud_deletions")
-    suspend fun getAll(): List<CloudDeletion>
-
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insert(d: CloudDeletion)
-
-    @Delete
-    suspend fun delete(d: CloudDeletion)
+    @Query("SELECT MIN(date) FROM attendance")
+    fun observeOldestDate(): Flow<String?>
 }
 
 @Dao
@@ -90,4 +76,7 @@ interface HolidayDao {
 
     @Delete
     suspend fun delete(holiday: Holiday)
+
+    @Query("DELETE FROM holidays WHERE date < :date")
+    suspend fun deleteBefore(date: String)
 }

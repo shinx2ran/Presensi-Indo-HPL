@@ -248,24 +248,30 @@ class GeoRuleTest {
     }
 }
 
-class CloudMapperTest {
+class RetentionTest {
     @Test
-    fun roundTrip() {
-        val r = AttendanceRecord(
-            id = 7, employeeId = 2, date = "2026-10-01", timestamp = 1_700_000_000_000L, timeIn = "07:50:12",
-            status = Status.TEPAT, lateMinutes = 0, photoPath = "/x/y.jpg", note = "", latitude = -6.1, longitude = 106.8,
-            accuracy = 12.5f, distanceMeters = 30, inLocation = true, locationNote = "di lokasi toko",
-        )
-        val m = com.indohpl.presensi.cloud.CloudMapper.toMap(r, "Riyanti", "QUJD", "Test")
-        assertEquals("2026-10-01_2", r.cloudId)
-        val back = com.indohpl.presensi.cloud.CloudMapper.fromMap(m)!!
-        assertEquals("Riyanti", back.employeeName)
-        assertEquals("QUJD", back.photoBase64)
-        assertEquals(r.copy(id = 0, photoPath = null, synced = true), back.record)
+    fun cutoffKeepsCurrentPlusTwoPreviousMonths() {
+        // 29 Okt 2026, simpan 2 bulan -> yang disimpan Agustus, September, Oktober; Juli dan sebelumnya dihapus.
+        assertEquals(LocalDate.of(2026, 8, 1), Retention.cutoffDate(LocalDate.of(2026, 10, 29), 2))
+        assertEquals(LocalDate.of(2026, 8, 1), Retention.cutoffDate(LocalDate.of(2026, 10, 1), 2))
+        assertEquals(LocalDate.of(2026, 9, 1), Retention.cutoffDate(LocalDate.of(2026, 11, 1), 2))
     }
 
     @Test
-    fun missingFieldsReturnNull() {
-        assertEquals(null, com.indohpl.presensi.cloud.CloudMapper.fromMap(mapOf("date" to "2026-10-01")))
+    fun cutoffCrossesYearBoundary() {
+        assertEquals(LocalDate.of(2025, 11, 1), Retention.cutoffDate(LocalDate.of(2026, 1, 15), 2))
+    }
+
+    @Test
+    fun monthsAreClamped() {
+        assertEquals(LocalDate.of(2026, 9, 1), Retention.cutoffDate(LocalDate.of(2026, 10, 29), 0))
+        assertEquals(LocalDate.of(2024, 10, 1), Retention.cutoffDate(LocalDate.of(2026, 10, 29), 99))
+    }
+
+    @Test
+    fun nextCleanupTellsWhichMonthGoes() {
+        val (date, month) = Retention.nextCleanup(LocalDate.of(2026, 10, 29), 2)
+        assertEquals(LocalDate.of(2026, 11, 1), date)
+        assertEquals(YearMonth.of(2026, 8), month)
     }
 }

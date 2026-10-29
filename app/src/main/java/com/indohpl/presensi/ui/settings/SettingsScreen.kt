@@ -185,7 +185,7 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-            CloudSection(repository, onMessage)
+            RetentionSection(repository, onMessage)
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
