@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -11,7 +13,7 @@ plugins {
 //   2. Lokal: signing/indohpl.p12 + signing/indohpl.properties (diabaikan git)
 // Tanpa kunci ini build tetap jalan (kunci debug acak), tetapi CI tidak menerbitkannya sebagai APK siap pasang.
 // JANGAN ganti kunci: kunci berbeda = Android menolak pembaruan dan data hanya bisa dipindah lewat impor CSV.
-val signingProps = java.util.Properties().apply {
+val signingProps = Properties().apply {
     rootProject.file("signing/indohpl.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
 }
 val permanentKeystore: File? =
