@@ -28,8 +28,8 @@ data class AppSettings(
     val workStartMale: String = "08:00",
     val toleranceMale: Int = 5,
     val monthlyBonus: Long = 250_000,         // uang rajin penuh per bulan (Rp)
-    val lateDeduction: Long = 0,              // potongan per hari telat; 0 = otomatis (bonus / hari kerja)
-    val deductAbsent: Boolean = true,         // potong juga jika alpa (tidak hadir tanpa izin)
+    val perDayAmount: Long = 0,               // tambahan per hari tepat waktu; 0 = otomatis (uang rajin / hari kerja)
+    val deductAbsent: Boolean = true,         // true = hari alpa tidak menambah saldo
     val workDays: Set<DayOfWeek> = DayOfWeek.values().toSet(), // Senin–Minggu
     // --- Lokasi toko Indo HPL ---
     val storeLat: Double? = null,             // null = titik toko belum diatur
@@ -50,7 +50,7 @@ data class AppSettings(
 
     fun bonusConfig() = BonusConfig(
         monthlyBonus = monthlyBonus,
-        lateDeductionOverride = lateDeduction,
+        perDayOverride = perDayAmount,
         deductAbsent = deductAbsent,
     )
 }
@@ -62,7 +62,9 @@ class SettingsStore(private val context: Context) {
         val WORK_START_M = stringPreferencesKey("work_start_m")
         val TOLERANCE_M = intPreferencesKey("tolerance_m")
         val BONUS = longPreferencesKey("monthly_bonus")
+        // Arti lama "potongan per hari telat". Tidak dibaca lagi (artinya berbeda) dan dihapus saat menyimpan.
         val LATE_DEDUCTION = longPreferencesKey("late_deduction")
+        val PER_DAY_AMOUNT = longPreferencesKey("per_day_amount")
         val DEDUCT_ABSENT = booleanPreferencesKey("deduct_absent")
         val WORK_DAYS = stringPreferencesKey("work_days") // "1,2,3,4,5,6"
         val STORE_LAT = doublePreferencesKey("store_lat")
@@ -110,7 +112,8 @@ class SettingsStore(private val context: Context) {
             p[Keys.WORK_START_M] = s.workStartMale
             p[Keys.TOLERANCE_M] = s.toleranceMale
             p[Keys.BONUS] = s.monthlyBonus
-            p[Keys.LATE_DEDUCTION] = s.lateDeduction
+            p[Keys.PER_DAY_AMOUNT] = s.perDayAmount
+            p.remove(Keys.LATE_DEDUCTION)
             p[Keys.DEDUCT_ABSENT] = s.deductAbsent
             p[Keys.WORK_DAYS] = s.workDays.map { it.value }.sorted().joinToString(",")
             if (s.storeLat != null && s.storeLon != null) {
@@ -140,7 +143,7 @@ class SettingsStore(private val context: Context) {
             workStartMale = this[Keys.WORK_START_M] ?: d.workStartMale,
             toleranceMale = this[Keys.TOLERANCE_M] ?: d.toleranceMale,
             monthlyBonus = this[Keys.BONUS] ?: d.monthlyBonus,
-            lateDeduction = this[Keys.LATE_DEDUCTION] ?: d.lateDeduction,
+            perDayAmount = this[Keys.PER_DAY_AMOUNT] ?: d.perDayAmount,
             deductAbsent = this[Keys.DEDUCT_ABSENT] ?: d.deductAbsent,
             workDays = days ?: d.workDays,
             storeLat = this[Keys.STORE_LAT],

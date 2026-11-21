@@ -46,6 +46,20 @@ class Repository(context: Context) {
         attendanceDao.getBetween(ym.atDay(1).toString(), ym.atEndOfMonth().toString())
     fun observeHolidays(): Flow<List<Holiday>> = holidayDao.observeAll()
 
+    /** Rekap saldo uang rajin semua karyawan aktif untuk satu bulan (dipakai layar hasil absen). */
+    suspend fun monthRecaps(ym: YearMonth, today: LocalDate = LocalDate.now()): List<com.indohpl.presensi.domain.EmployeeRecap> {
+        val s = settingsStore.current()
+        return com.indohpl.presensi.domain.BonusCalculator.recap(
+            ym = ym,
+            today = today,
+            employees = employeeDao.getAll().filter { it.active },
+            records = getMonth(ym),
+            workDayOfWeeks = s.workDays,
+            holidays = holidayDao.getAll().mapNotNull { runCatching { LocalDate.parse(it.date) }.getOrNull() }.toSet(),
+            config = s.bonusConfig(),
+        )
+    }
+
     /**
      * Simpan presensi hadir. [capturedAt] adalah waktu saat foto diambil (jam HP kasir).
      * Mengembalikan null jika karyawan sudah absen hari itu.

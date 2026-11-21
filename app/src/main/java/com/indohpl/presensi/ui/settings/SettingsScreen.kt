@@ -122,7 +122,7 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
             workStartM = s.workStartMale
             toleranceM = s.toleranceMale.toString()
             bonus = s.monthlyBonus.toString()
-            deduction = s.lateDeduction.toString()
+            deduction = s.perDayAmount.toString()
             deductAbsent = s.deductAbsent
             workDays = s.workDays
             storeLatLon = if (s.storeLat != null && s.storeLon != null) GeoRule.formatCoord(s.storeLat, s.storeLon) else ""
@@ -145,7 +145,8 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
         val ded = deduction.trim().toLongOrNull()
         if (tolF == null || tolF < 0 || tolM == null || tolM < 0) { onMessage("Toleransi harus angka ≥ 0"); return }
         if (bon == null || bon < 0) { onMessage("Uang rajin harus angka ≥ 0"); return }
-        if (ded == null || ded < 0) { onMessage("Potongan harus angka ≥ 0 (0 = otomatis)"); return }
+        if (ded == null || ded < 0) { onMessage("Tambahan per hari harus angka ≥ 0 (0 = otomatis)"); return }
+        if (bon != null && ded > bon) { onMessage("Tambahan per hari tidak boleh melebihi uang rajin maksimal"); return }
         if (workDays.isEmpty()) { onMessage("Pilih minimal satu hari kerja"); return }
         val latLon = if (storeLatLon.isBlank()) null else GeoRule.parseLatLon(storeLatLon)
         if (storeLatLon.isNotBlank() && latLon == null) { onMessage("Koordinat harus \"lat, lon\", contoh -6.200000, 106.816666"); return }
@@ -160,7 +161,7 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
                     workStartMale = workStartM.trim(),
                     toleranceMale = tolM,
                     monthlyBonus = bon,
-                    lateDeduction = ded,
+                    perDayAmount = ded,
                     deductAbsent = deductAbsent,
                     workDays = workDays,
                     storeLat = latLon?.first,
@@ -239,24 +240,29 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
             Text("Uang rajin", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             OutlinedTextField(
                 value = bonus, onValueChange = { bonus = it.filter(Char::isDigit) },
-                label = { Text("Uang rajin penuh per bulan (Rp)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text("Uang rajin maksimal per bulan (Rp)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             )
             OutlinedTextField(
                 value = deduction, onValueChange = { deduction = it.filter(Char::isDigit) },
-                label = { Text("Potongan per hari telat (Rp)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text("Tambahan saldo per hari tepat waktu (Rp)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 supportingText = {
                     val b = bonus.toLongOrNull() ?: 0L
-                    val wd = workDays.size
-                    Text("0 = otomatis: uang rajin ÷ jumlah hari kerja bulan itu (≈ ${RecapFormatter.rupiah(if (wd > 0) b / (wd * 4 + 2) else 0)} untuk bulan dengan ${wd * 4 + 2} hari kerja).")
+                    val sample = java.time.YearMonth.now().let { ym ->
+                        com.indohpl.presensi.domain.BonusCalculator.workDays(ym, workDays, emptySet()).size
+                    }
+                    val per = com.indohpl.presensi.domain.BonusCalculator.saldoFor(
+                        com.indohpl.presensi.domain.BonusConfig(b, 0, true), sample, 1,
+                    )
+                    Text("0 = otomatis: uang rajin maksimal dibagi rata ke hari kerja (bulan ini $sample hari kerja, ${RecapFormatter.rupiahPlus(per)} per hari). Telat tidak menambah. Saldo tidak pernah melebihi uang rajin maksimal.")
                 },
             )
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f)) {
-                    Text("Potong juga hari alpa")
+                    Text("Hari alpa tidak menambah saldo")
                     Text(
-                        "Alpa = tidak absen di hari kerja tanpa izin/sakit.",
+                        "Alpa = tidak absen di hari kerja tanpa izin/sakit. Kalau dimatikan, alpa tetap menambah seperti izin.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }

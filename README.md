@@ -52,27 +52,37 @@ Beranda ──tap "Absen"──▶ [1] Biometrik HP kasir ──▶ [2] Selfie (
 4. Saklar **Wajib di lokasi toko** bisa dimatikan: absen tetap tercatat tapi ditandai "Luar lokasi" (merah) di Beranda, Rekap, dan ekspor.
 5. Lokasi palsu (aplikasi fake GPS) terdeteksi dan ditolak.
 
-## Aturan uang rajin (bisa diubah di Pengaturan)
+## Aturan uang rajin: saldo yang bertambah (bisa diubah di Pengaturan)
+
+Saldo uang rajin tiap karyawan **mulai dari Rp 0 di awal bulan dan bertambah** setiap hari kerja yang dihitung. Tampil hijau dengan tanda "+".
+
+| Hari kerja | Tambahan saldo |
+|---|---|
+| Tepat waktu | **+Rp 8.333** (250.000 ÷ jumlah hari kerja bulan itu) |
+| Izin / sakit | +Rp 8.333 (sama seperti aturan lama: tidak dipotong) |
+| Telat | +Rp 0 |
+| Alpa (tidak absen tanpa izin/sakit) | +Rp 0 (bisa diubah jadi tetap menambah) |
+| Absen di hari libur toko | tidak dihitung |
+
+Rumus: `saldo = bulat(250.000 × hari_menambah ÷ hari_kerja)`, jadi sebulan penuh tepat waktu = **tepat Rp 250.000**. Hasil akhir bulan sama dengan aturan lama (selisih pembulatan paling banyak beberapa rupiah).
 
 | Parameter | Default |
 |---|---|
-| Uang rajin penuh per bulan | Rp 250.000 |
-| Potongan per hari telat | otomatis = 250.000 ÷ jumlah hari kerja bulan itu (≈ Rp 8.333 untuk 30 hari kerja) |
-| Hari kerja | Senin–Minggu (setiap hari), kecuali tanggal libur toko |
-| Hari libur toko | daftar tanggal di Pengaturan (tidak dihitung hari kerja) |
-| Alpa (tidak absen, tanpa izin/sakit) | ikut dipotong (bisa dimatikan) |
+| Uang rajin maksimal per bulan | Rp 250.000 |
+| Tambahan per hari tepat waktu | 0 = otomatis (dibagi rata). Kalau diisi angka tetap, saldo tetap tidak melebihi maksimal |
+| Hari kerja | Senin–Minggu, kecuali tanggal libur toko |
 
-Rumus: `uang rajin = maks(0, 250.000 − potongan × (hari telat + hari alpa))`.
-Izin/sakit **tidak** dipotong tetapi juga tidak dihitung "full bulan".
-
-Kalau ingin potongan tetap (misal Rp 10.000 per telat), isi angka itu di *Potongan per hari telat*.
+Tempat melihat saldo:
+- **Beranda**: setelah absen muncul pil hijau "+Rp 8.333" dan saldo bulan ini; sebelum absen ada petunjuk "Tepat waktu sampai 07:55 = +Rp 8.333".
+- **Layar hasil absen**: "+Rp 8.333" besar dan saldo yang menghitung naik, bilah kemajuan, dan 🔥 hari beruntun.
+- **Tab Saldo**: saldo per karyawan, bilah menuju maksimal, "masih bisa sampai", dan riwayat harian dengan tambahan per hari.
 
 ## Hak akses: kasir vs owner
 
 | Tab | Siapa | Isi |
 |---|---|---|
 | Beranda | kasir | absen, tandai izin/sakit, lihat foto, hapus salah tekan |
-| Rekap | kasir & owner | **hanya melihat** rekap bulanan, tidak ada tombol ubah/ekspor |
+| Saldo | kasir & karyawan & owner | **hanya melihat** saldo uang rajin per bulan, tidak ada tombol ubah/ekspor |
 | Pengaturan | **owner, dikunci PIN** | aturan jam, uang rajin, lokasi toko, hari libur, ekspor rekap, ganti PIN |
 
 PIN owner (4–8 angka) dibuat saat tab Pengaturan pertama kali dibuka. Disimpan sebagai hash (tidak bisa dibaca dari file). Salah 5 kali = terkunci 30 detik. Pindah tab = terkunci lagi. PIN yang lupa hanya bisa direset dengan menghapus data aplikasi.
@@ -92,7 +102,7 @@ Pengaman: hapus **otomatis** ditunda bila absen terakhir lebih dari 35 hari lalu
 
 ## Rekap & ekspor ke Claude
 
-Tab **Rekap** menampilkan per karyawan: hari kerja, hadir, tepat, telat, izin, sakit, alpa, total potongan, uang rajin.
+Tab **Saldo** menampilkan per karyawan: saldo uang rajin, hari menambah, tepat, telat, izin, sakit, alpa, dan riwayat harian.
 Bulan berjalan ditandai "sementara". Ketuk nama untuk detail harian.
 
 Ekspor ada di **Pengaturan (owner) → Ekspor rekap bulanan**. Tombol **Bagikan file** mengirim 3 file lewat menu bagikan Android (pilih aplikasi Claude, WhatsApp, Drive, dll):

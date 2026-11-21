@@ -8,6 +8,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -65,9 +68,17 @@ import com.indohpl.presensi.data.AppSettings
 import com.indohpl.presensi.data.Employee
 import com.indohpl.presensi.data.Repository
 import com.indohpl.presensi.data.Status
+import com.indohpl.presensi.domain.EmployeeRecap
 import com.indohpl.presensi.domain.GeoCheck
 import com.indohpl.presensi.domain.GeoRule
+import com.indohpl.presensi.domain.LateRule
+import com.indohpl.presensi.domain.RecapFormatter
+import com.indohpl.presensi.ui.AnimatedRupiah
+import com.indohpl.presensi.ui.NoGainChip
+import com.indohpl.presensi.ui.PlusChip
+import com.indohpl.presensi.ui.SaldoProgress
 import com.indohpl.presensi.ui.StatusPill
+import com.indohpl.presensi.ui.StreakChip
 import com.indohpl.presensi.ui.findFragmentActivity
 import com.indohpl.presensi.ui.theme.Amber
 import com.indohpl.presensi.ui.theme.Green
@@ -77,7 +88,9 @@ import com.indohpl.presensi.util.BiometricResult
 import com.indohpl.presensi.util.LocationHelper
 import com.indohpl.presensi.util.PhotoStamper
 import java.io.File
+import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -107,6 +120,8 @@ fun CheckInScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var shot by remember { mutableStateOf<Shot?>(null) }
     var savedStatus by remember { mutableStateOf<Pair<String, Int>?>(null) } // status, menit telat
+    var savedRecap by remember { mutableStateOf<EmployeeRecap?>(null) } // rekap saldo bulan ini setelah absen (null bila gagal dimuat)
+    var savedCredit by remember { mutableStateOf(0L) } // tambahan saldo dari absen hari ini
     var lensFacing by remember { mutableIntStateOf(CameraSelector.LENS_FACING_FRONT) }
     var hasCameraPermission by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
@@ -269,6 +284,12 @@ fun CheckInScreen(
                 onFinished("${emp.name} sudah absen hari ini.")
             } else {
                 savedStatus = rec.status to rec.lateMinutes
+                val recap = runCatching {
+                    val day = LocalDate.parse(rec.date)
+                    repository.monthRecaps(YearMonth.from(day), day).firstOrNull { it.employee.id == emp.id }
+                }.getOrNull()
+                savedRecap = recap
+                savedCredit = recap?.dailyCredits?.get(rec.date) ?: 0L
                 step = Step.SAVED
             }
         }
@@ -421,7 +442,16 @@ fun CheckInScreen(
                 Step.SAVED -> {
                     val (status, late) = savedStatus ?: (Status.TEPAT to 0)
                     val ok = status == Status.TEPAT
-                    Centered {
+                    val recap = savedRecap
+                    val credit = savedCredit
+                    val saldoBefore = if (recap != null) recap.earned - credit else 0L
+                    var gainShown by remember { mutableStateOf(false) }
+                    LaunchedEffect(Unit) { gainShown = true }
+                    Column(
+                        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Spacer(Modifier.height(16.dp))
                         Icon(
                             Icons.Filled.CheckCircle,
                             null,
@@ -437,11 +467,76 @@ fun CheckInScreen(
                         )
                         Spacer(Modifier.height(8.dp))
                         StatusPill(status = status, text = if (ok) "Tepat waktu" else "Telat $late menit")
-                        Spacer(Modifier.height(8.dp))
+                        if (recap != null) {
+                            Spacer(Modifier.height(20.dp))
+                            if (credit > 0) {
+                                // Tepat waktu: rayakan uang yang masuk.
+                                AnimatedVisibility(visible = gainShown, enter = scaleIn(initialScale = 0.6f) + fadeIn()) {
+                                    PlusChip(credit, big = true)
+                                }
+                                Spacer(Modifier.height(16.dp))
+                                Text(
+                                    "Saldo bulan ini",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                AnimatedRupiah(
+                                    target = recap.earned,
+                                    from = saldoBefore,
+                                    style = MaterialTheme.typography.displaySmall,
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                SaldoProgress(recap.earned, recap.maxThisMonth, Modifier.fillMaxWidth())
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    "dari ${RecapFormatter.rupiah(recap.maxThisMonth)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                if (recap.streak >= 2) {
+                                    Spacer(Modifier.height(12.dp))
+                                    StreakChip(recap.streak)
+                                }
+                            } else {
+                                // Telat (atau hari yang tidak menambah saldo): jelaskan dengan ramah.
+                                if (!ok) {
+                                    NoGainChip("+Rp 0")
+                                    Spacer(Modifier.height(12.dp))
+                                    Text(
+                                        "Hari ini tidak menambah saldo.",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        textAlign = TextAlign.Center,
+                                    )
+                                    val emp = employee
+                                    val limit = emp?.let { e ->
+                                        LateRule.parseWorkStart(settings.workStartFor(e.gender))
+                                            ?.plusMinutes(settings.toleranceFor(e.gender).toLong())
+                                            ?.format(DateTimeFormatter.ofPattern("HH:mm"))
+                                    }
+                                    if (limit != null) {
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(
+                                            "Besok datang sampai $limit untuk ${RecapFormatter.rupiahPlus(recap.perDayAmount)}",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            textAlign = TextAlign.Center,
+                                        )
+                                    }
+                                    Spacer(Modifier.height(12.dp))
+                                }
+                                Text(
+                                    "Saldo bulan ini ${RecapFormatter.rupiah(recap.earned)}",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(16.dp))
                         shot?.geo?.let { g ->
                             Text(
                                 if (g.inLocation) "Di lokasi Indo HPL" else "Di luar lokasi toko (${g.note})",
                                 color = if (g.inLocation) Green else MaterialTheme.colorScheme.error,
+                                textAlign = TextAlign.Center,
                             )
                         }
                         Text(
@@ -450,7 +545,14 @@ fun CheckInScreen(
                         )
                         Spacer(Modifier.height(24.dp))
                         Button(onClick = {
-                            onFinished("${employee?.name}: ${if (ok) "tepat waktu" else "telat $late menit"}")
+                            val name = employee?.name
+                            onFinished(
+                                when {
+                                    credit > 0 -> "$name: tepat waktu, ${RecapFormatter.rupiahPlus(credit)}"
+                                    ok -> "$name: tepat waktu"
+                                    else -> "$name: telat $late menit"
+                                },
+                            )
                         }) { Text("Selesai") }
                     }
                 }

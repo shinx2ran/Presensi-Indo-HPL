@@ -2,9 +2,9 @@ package com.indohpl.presensi.ui
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Summarize
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -44,7 +44,7 @@ private data class Tab(val route: String, val label: String, val icon: ImageVect
 
 private val tabs = listOf(
     Tab(Routes.HOME, "Beranda", Icons.Filled.Home),
-    Tab(Routes.RECAP, "Rekap", Icons.Filled.Summarize),
+    Tab(Routes.RECAP, "Saldo", Icons.Filled.AccountBalanceWallet),
     Tab(Routes.SETTINGS, "Pengaturan", Icons.Filled.Settings),
 )
 

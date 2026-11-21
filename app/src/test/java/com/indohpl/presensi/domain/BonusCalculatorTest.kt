@@ -17,134 +17,148 @@ class BonusCalculatorTest {
         DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY,
         DayOfWeek.THURSDAY, DayOfWeek.FRIDAY, DayOfWeek.SATURDAY,
     )
+    private val everyDay = DayOfWeek.values().toSet()
     private val sara = Employee(1, "Sara", "P")
     private val evan = Employee(3, "Evan", "L")
-    private val config = BonusConfig(monthlyBonus = 250_000, lateDeductionOverride = 0, deductAbsent = true)
+    private val config = BonusConfig(monthlyBonus = 250_000, perDayOverride = 0, deductAbsent = true)
 
-    // September 2026: 30 hari, mulai Selasa. Senin–Sabtu = 26 hari kerja.
+    // September 2026: 30 hari, mulai Selasa. Senin–Sabtu = 26 hari kerja. Setiap hari = 30 hari kerja.
     private val sep = YearMonth.of(2026, 9)
+    private val afterSep = LocalDate.of(2026, 10, 5)
 
     private fun rec(emp: Employee, date: LocalDate, status: String, late: Int = 0) = AttendanceRecord(
         employeeId = emp.id, date = date.toString(), timestamp = 0L, timeIn = "08:00:00",
         status = status, lateMinutes = late, photoPath = null,
     )
 
-    private fun allDays(emp: Employee, status: (LocalDate) -> String) =
-        BonusCalculator.workDays(sep, monSat, emptySet()).map { rec(emp, it, status(it)) }
+    private fun recap(records: List<AttendanceRecord>, today: LocalDate = afterSep, days: Set<DayOfWeek> = everyDay,
+                      cfg: BonusConfig = config, holidays: Set<LocalDate> = emptySet(), emp: Employee = sara) =
+        BonusCalculator.recap(sep, today, listOf(emp), records, days, holidays, cfg).single()
 
     @Test
     fun workDaysSeptember2026() {
-        val days = BonusCalculator.workDays(sep, monSat, emptySet())
-        assertEquals(26, days.size)
-        assertTrue(days.none { it.dayOfWeek == DayOfWeek.SUNDAY })
+        assertEquals(26, BonusCalculator.workDays(sep, monSat, emptySet()).size)
+        assertEquals(30, BonusCalculator.workDays(sep, everyDay, emptySet()).size)
+        assertEquals(29, BonusCalculator.workDays(sep, everyDay, setOf(LocalDate.of(2026, 9, 1))).size)
     }
 
     @Test
-    fun holidayReducesWorkDays() {
-        val days = BonusCalculator.workDays(sep, monSat, setOf(LocalDate.of(2026, 9, 1)))
-        assertEquals(25, days.size)
+    fun saldoGrowsProportionallyAndHitsExactMaximum() {
+        // Contoh dihitung tangan: 250.000 x 10 / 30 = 83.333,33 -> 83.333; x 11 / 30 = 91.666,67 -> 91.667.
+        assertEquals(83_333L, BonusCalculator.saldoFor(config, 30, 10))
+        assertEquals(91_667L, BonusCalculator.saldoFor(config, 30, 11))
+        assertEquals(8_333L, BonusCalculator.saldoFor(config, 30, 1))
+        assertEquals(250_000L, BonusCalculator.saldoFor(config, 30, 30))
+        assertEquals(250_000L, BonusCalculator.saldoFor(config, 26, 26))
+        assertEquals(250_000L, BonusCalculator.saldoFor(config, 31, 31))
+        assertEquals(0L, BonusCalculator.saldoFor(config, 30, 0))
+        assertEquals(0L, BonusCalculator.saldoFor(config, 0, 0))
     }
 
     @Test
-    fun fullMonthOnTimeGetsFullBonus() {
-        val records = allDays(sara) { Status.TEPAT }
-        val r = BonusCalculator.recap(sep, LocalDate.of(2026, 10, 5), listOf(sara), records, monSat, emptySet(), config).single()
-        assertEquals(26, r.hadir)
-        assertEquals(0, r.alpa)
+    fun fullMonthOnTimeEarnsExactlyFullBonusAndCreditsSumUp() {
+        val records = BonusCalculator.workDays(sep, everyDay, emptySet()).map { rec(sara, it, Status.TEPAT) }
+        val r = recap(records)
+        assertEquals(250_000L, r.earned)
+        assertEquals(250_000L, r.maxThisMonth)
+        assertEquals(30, r.creditedDays)
         assertTrue(r.isFullMonth)
-        assertEquals(250_000L, r.bonus)
-        assertEquals(9_615L, r.deductionPerDay) // 250000 / 26 dibulatkan
+        assertEquals(8_333L, r.perDayAmount)
+        assertEquals(r.earned, r.dailyCredits.values.sum())
+        assertTrue(r.dailyCredits.values.all { it == 8_333L || it == 8_334L })
+        assertEquals(30, r.streak)
     }
 
     @Test
-    fun twoLateDaysDeductTwice() {
+    fun lateDayAddsNothingAndMatchesOldRuleAtMonthEnd() {
+        // 26 hari kerja Senin–Sabtu, 2 telat. Lama: 250.000 - 2 x 9.615 = 230.770. Baru: 250.000 x 24/26 = 230.769,2 -> 230.769.
         val days = BonusCalculator.workDays(sep, monSat, emptySet())
         val records = days.mapIndexed { i, d -> rec(sara, d, if (i < 2) Status.TELAT else Status.TEPAT, if (i < 2) 15 else 0) }
-        val r = BonusCalculator.recap(sep, LocalDate.of(2026, 10, 5), listOf(sara), records, monSat, emptySet(), config).single()
-        assertEquals(2, r.telat)
-        assertEquals(2, r.deductedDays)
-        assertEquals(2 * 9_615L, r.totalDeduction)
-        assertEquals(250_000L - 2 * 9_615L, r.bonus)
+        val r = recap(records, days = monSat)
+        assertEquals(230_769L, r.earned)
+        assertEquals(24, r.creditedDays)
+        assertEquals(0L, r.dailyCredits[days[0].toString()])
+        assertEquals(0L, r.dailyCredits[days[1].toString()])
+        assertEquals(r.earned, r.dailyCredits.values.sum())
         assertEquals(30, r.totalLateMinutes)
         assertFalse(r.isFullMonth)
     }
 
     @Test
-    fun fixedDeductionOverrideIsUsed() {
-        val cfg = config.copy(lateDeductionOverride = 10_000)
-        val days = BonusCalculator.workDays(sep, monSat, emptySet())
-        val records = days.mapIndexed { i, d -> rec(sara, d, if (i == 0) Status.TELAT else Status.TEPAT) }
-        val r = BonusCalculator.recap(sep, LocalDate.of(2026, 10, 5), listOf(sara), records, monSat, emptySet(), cfg).single()
-        assertEquals(10_000L, r.deductionPerDay)
-        assertEquals(240_000L, r.bonus)
-    }
-
-    @Test
-    fun absentCountsOnlyElapsedWorkDays() {
-        // Hari ini 5 Sep 2026 (Sabtu). Hari kerja yang sudah lewat: Sel 1, Rab 2, Kam 3, Jum 4, Sab 5 = 5 hari.
+    fun midMonthSaldoMaxReachableAndStreak() {
+        // Hari ini 5 Sep (setiap hari kerja). 1-3 tepat, 4 telat, 5 belum absen.
         val today = LocalDate.of(2026, 9, 5)
         val records = listOf(
             rec(evan, LocalDate.of(2026, 9, 1), Status.TEPAT),
             rec(evan, LocalDate.of(2026, 9, 2), Status.TEPAT),
+            rec(evan, LocalDate.of(2026, 9, 3), Status.TEPAT),
+            rec(evan, LocalDate.of(2026, 9, 4), Status.TELAT, 7),
         )
-        val r = BonusCalculator.recap(sep, today, listOf(evan), records, monSat, emptySet(), config).single()
-        assertEquals(5, r.workDaysElapsed)
-        assertEquals(3, r.alpa)
-        assertEquals(3, r.deductedDays)
-        assertEquals(250_000L - 3 * 9_615L, r.bonus)
+        val r = recap(records, today = today, emp = evan)
+        assertEquals(25_000L, r.earned)           // 250.000 x 3/30
+        assertEquals(0, r.alpa)                   // hari ini belum lewat, masih bisa absen
+        assertEquals(241_667L, r.maxReachable)    // 3 + 26 sisa (5..30) = 29 hari -> 241.666,67
+        assertEquals(0, r.streak)                 // kemarin telat
+        val r2 = recap(records + rec(evan, today, Status.TEPAT), today = today, emp = evan)
+        assertEquals(33_333L, r2.earned)
+        assertEquals(1, r2.streak)
+        assertEquals(8_333L, r2.dailyCredits[today.toString()])
     }
 
     @Test
-    fun excusedDaysAreNotDeducted() {
-        val today = LocalDate.of(2026, 9, 5)
+    fun streakSkipsTodayWhenNotYetCheckedIn() {
+        val today = LocalDate.of(2026, 9, 4)
+        val records = (1..3).map { rec(sara, LocalDate.of(2026, 9, it), Status.TEPAT) }
+        assertEquals(3, recap(records, today = today).streak)
+    }
+
+    @Test
+    fun excusedDaysStillAdd() {
+        val today = LocalDate.of(2026, 9, 3)
         val records = listOf(
-            rec(evan, LocalDate.of(2026, 9, 1), Status.TEPAT),
-            rec(evan, LocalDate.of(2026, 9, 2), Status.IZIN),
-            rec(evan, LocalDate.of(2026, 9, 3), Status.SAKIT),
-            rec(evan, LocalDate.of(2026, 9, 4), Status.TEPAT),
-            rec(evan, LocalDate.of(2026, 9, 5), Status.TEPAT),
+            rec(evan, LocalDate.of(2026, 9, 1), Status.IZIN),
+            rec(evan, LocalDate.of(2026, 9, 2), Status.SAKIT),
+            rec(evan, LocalDate.of(2026, 9, 3), Status.TEPAT),
         )
-        val r = BonusCalculator.recap(sep, today, listOf(evan), records, monSat, emptySet(), config).single()
+        val r = recap(records, today = today, emp = evan)
         assertEquals(1, r.izin)
         assertEquals(1, r.sakit)
-        assertEquals(0, r.alpa)
-        assertEquals(250_000L, r.bonus)
-        assertFalse(r.isFullMonth) // izin/sakit bukan "full bulan"
+        assertEquals(3, r.creditedDays)
+        assertEquals(25_000L, r.earned)
+        assertFalse(r.isFullMonth)
     }
 
     @Test
-    fun absentNotDeductedWhenDisabled() {
-        val cfg = config.copy(deductAbsent = false)
-        val r = BonusCalculator.recap(sep, LocalDate.of(2026, 9, 5), listOf(evan), emptyList(), monSat, emptySet(), cfg).single()
-        assertEquals(5, r.alpa)
-        assertEquals(0, r.deductedDays)
-        assertEquals(250_000L, r.bonus)
+    fun absentDaysAddNothingUnlessToggledOff() {
+        val today = LocalDate.of(2026, 9, 5)
+        val r = recap(emptyList(), today = today, emp = evan)
+        assertEquals(4, r.alpa)                   // 1-4 lewat tanpa catatan, 5 = hari ini
+        assertEquals(0L, r.earned)
+        val r2 = recap(emptyList(), today = today, emp = evan, cfg = config.copy(deductAbsent = false))
+        assertEquals(4, r2.creditedDays)
+        assertEquals(33_333L, r2.earned)
+        assertEquals(r2.earned, r2.dailyCredits.values.sum())
     }
 
     @Test
-    fun bonusNeverNegative() {
-        val cfg = config.copy(lateDeductionOverride = 100_000)
-        val records = allDays(sara) { Status.TELAT }
-        val r = BonusCalculator.recap(sep, LocalDate.of(2026, 10, 5), listOf(sara), records, monSat, emptySet(), cfg).single()
-        assertEquals(0L, r.bonus)
-        assertEquals(250_000L, r.totalDeduction)
+    fun fixedPerDayAmountIsCappedAtMonthlyBonus() {
+        val cfg = config.copy(perDayOverride = 10_000)
+        val all = BonusCalculator.workDays(sep, everyDay, emptySet()).map { rec(sara, it, Status.TEPAT) }
+        val r = recap(all, cfg = cfg)
+        assertEquals(10_000L, r.perDayAmount)
+        assertEquals(250_000L, r.earned)          // 30 x 10.000 = 300.000, dibatasi 250.000
+        assertEquals(250_000L, r.maxThisMonth)
+        assertEquals(r.earned, r.dailyCredits.values.sum())
+        assertEquals(120_000L, recap(all.take(12), cfg = cfg).earned)
     }
 
     @Test
-    fun genderRulesFromUser() {
-        // Perempuan: 07:45 toleransi 10 -> batas 07:55
-        assertEquals(0, LateRule.lateMinutes(LocalTime.of(7, 55, 0), "07:45", 10))
-        assertEquals(11, LateRule.lateMinutes(LocalTime.of(7, 56, 0), "07:45", 10))
-        // Laki-laki: 08:00 toleransi 5 -> batas 08:05
-        assertEquals(0, LateRule.lateMinutes(LocalTime.of(8, 5, 0), "08:00", 5))
-        assertEquals(6, LateRule.lateMinutes(LocalTime.of(8, 6, 0), "08:00", 5))
-    }
-
-    @Test
-    fun sevenDayWorkWeek() {
-        val all = java.time.DayOfWeek.values().toSet()
-        assertEquals(30, BonusCalculator.workDays(sep, all, emptySet()).size)
-        assertEquals(8_333L, BonusCalculator.deductionPerDay(config, 30))
+    fun attendanceOnHolidayDoesNotAdd() {
+        val h = LocalDate.of(2026, 9, 17)
+        val r = recap(listOf(rec(sara, h, Status.TEPAT)), holidays = setOf(h))
+        assertEquals(0, r.creditedDays)
+        assertEquals(0L, r.earned)
+        assertEquals(29, r.workDaysInMonth)
     }
 
     @Test
@@ -158,16 +172,29 @@ class BonusCalculatorTest {
     }
 
     @Test
-    fun csvAndMarkdownContainNamesAndTotals() {
-        val records = listOf(rec(sara, LocalDate.of(2026, 9, 1), Status.TELAT, 12))
-        val recaps = BonusCalculator.recap(sep, LocalDate.of(2026, 9, 1), listOf(sara), records, monSat, emptySet(), config)
+    fun genderRulesFromUser() {
+        assertEquals(0, LateRule.lateMinutes(LocalTime.of(7, 55, 0), "07:45", 10))
+        assertEquals(11, LateRule.lateMinutes(LocalTime.of(7, 56, 0), "07:45", 10))
+        assertEquals(0, LateRule.lateMinutes(LocalTime.of(8, 5, 0), "08:00", 5))
+        assertEquals(6, LateRule.lateMinutes(LocalTime.of(8, 6, 0), "08:00", 5))
+    }
+
+    @Test
+    fun csvAndMarkdownShowSaldoAndPlus() {
+        val records = listOf(rec(sara, LocalDate.of(2026, 9, 1), Status.TEPAT), rec(sara, LocalDate.of(2026, 9, 2), Status.TELAT, 12))
+        val recaps = BonusCalculator.recap(sep, LocalDate.of(2026, 9, 2), listOf(sara), records, everyDay, emptySet(), config)
         val csv = RecapFormatter.detailCsv(sep, listOf(sara), records)
-        assertTrue(csv.contains("2026-09-01,Sara,TELAT,08:00:00,12,,"))
-        val md = RecapFormatter.markdown(sep, recaps, records, listOf(sara), config, "Perempuan 07:45 (toleransi 10 mnt) · Laki-laki 08:00 (toleransi 5 mnt)", "01/09/2026 09:00:00")
+        assertTrue(csv.contains("2026-09-02,Sara,TELAT,08:00:00,12,,"))
+        val sum = RecapFormatter.summaryCsv(sep, recaps)
+        assertTrue(sum.contains("saldo_uang_rajin"))
+        assertTrue(sum.contains(",8333,1,8333,250000,TIDAK"))
+        val md = RecapFormatter.markdown(sep, recaps, records, listOf(sara), config, "Perempuan 07:45 (toleransi 10 mnt) · Laki-laki 08:00 (toleransi 5 mnt)", "02/09/2026 09:00:00")
         assertTrue(md.contains("# Rekap Presensi September 2026"))
-        assertTrue(md.contains("| Sara | 26 |"))
+        assertTrue(md.contains("**Rp 8.333**"))
+        assertTrue(md.contains("| +Rp 8.333 |"))
+        assertTrue(md.contains("| +Rp 0 |"))
         assertEquals("Rp 250.000", RecapFormatter.rupiah(250_000))
-        assertEquals("Rp 9.615", RecapFormatter.rupiah(9_615))
+        assertEquals("+Rp 8.333", RecapFormatter.rupiahPlus(8_333))
     }
 }
 

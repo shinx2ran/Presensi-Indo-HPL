@@ -16,6 +16,9 @@ object RecapFormatter {
 
     fun monthLabel(ym: YearMonth): String = "${monthNames[ym.monthValue - 1]} ${ym.year}"
 
+    /** "+Rp 8.333" untuk tambahan saldo. */
+    fun rupiahPlus(v: Long): String = "+" + rupiah(v)
+
     fun rupiah(v: Long): String {
         val s = String.format(Locale.US, "%,d", v).replace(',', '.')
         return "Rp $s"
@@ -51,12 +54,12 @@ object RecapFormatter {
     /** CSV ringkasan per karyawan. */
     fun summaryCsv(ym: YearMonth, recaps: List<EmployeeRecap>): String {
         val sb = StringBuilder()
-        sb.append("bulan,nama,hari_kerja,hadir,tepat,telat,izin,sakit,alpa,di_luar_lokasi,total_menit_telat,potongan_per_hari,hari_dipotong,total_potongan,uang_rajin,full_bulan\n")
+        sb.append("bulan,nama,hari_kerja,hadir,tepat,telat,izin,sakit,alpa,di_luar_lokasi,total_menit_telat,tambah_per_hari,hari_menambah,saldo_uang_rajin,maksimal_bulan_ini,full_bulan\n")
         recaps.forEach { r ->
             sb.append(
                 listOf(
                     ym.toString(), r.employee.name, r.workDaysInMonth, r.hadir, r.tepat, r.telat, r.izin, r.sakit,
-                    r.alpa, r.outsideLocation, r.totalLateMinutes, r.deductionPerDay, r.deductedDays, r.totalDeduction, r.bonus,
+                    r.alpa, r.outsideLocation, r.totalLateMinutes, r.perDayAmount, r.creditedDays, r.earned, r.maxThisMonth,
                     if (r.isFullMonth) "YA" else "TIDAK",
                 ).joinToString(",") { csvCell(it.toString()) },
             ).append('\n')
@@ -79,28 +82,30 @@ object RecapFormatter {
         sb.append("# Rekap Presensi ${monthLabel(ym)}\n\n")
         sb.append("Dibuat: $generatedAt\n")
         sb.append("Jam masuk: $rulesText. ")
-        sb.append("Uang rajin penuh: ${rupiah(config.monthlyBonus)}/bulan. ")
-        val perDay = recaps.firstOrNull()?.deductionPerDay ?: 0
-        sb.append("Potongan per hari telat: ${rupiah(perDay)}")
-        sb.append(if (config.deductAbsent) " (alpa juga dipotong).\n\n" else " (alpa tidak dipotong).\n\n")
+        val perDay = recaps.firstOrNull()?.perDayAmount ?: 0
+        sb.append("Uang rajin bertambah ${rupiahPlus(perDay)} setiap hari tepat waktu (izin/sakit juga menambah")
+        sb.append(if (config.deductAbsent) "; telat dan alpa tidak menambah)" else "; telat tidak menambah, alpa tetap menambah)")
+        sb.append(", maksimal ${rupiah(recaps.firstOrNull()?.maxThisMonth ?: config.monthlyBonus)} bulan ini.\n\n")
 
         sb.append("## Ringkasan\n\n")
-        sb.append("| Nama | Hari kerja | Hadir | Tepat | Telat | Izin | Sakit | Alpa | Di luar lokasi | Potongan | Uang rajin |\n")
-        sb.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n")
+        sb.append("| Nama | Hari kerja | Hadir | Tepat | Telat | Izin | Sakit | Alpa | Di luar lokasi | Hari menambah | Saldo uang rajin | Maksimal |\n")
+        sb.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n")
         recaps.forEach { r ->
             sb.append(
-                "| ${r.employee.name} | ${r.workDaysInMonth} | ${r.hadir} | ${r.tepat} | ${r.telat} | ${r.izin} | ${r.sakit} | ${r.alpa} | ${r.outsideLocation} | ${rupiah(r.totalDeduction)} | **${rupiah(r.bonus)}** |\n",
+                "| ${r.employee.name} | ${r.workDaysInMonth} | ${r.hadir} | ${r.tepat} | ${r.telat} | ${r.izin} | ${r.sakit} | ${r.alpa} | ${r.outsideLocation} | ${r.creditedDays} | **${rupiah(r.earned)}** | ${rupiah(r.maxThisMonth)} |\n",
             )
         }
+        val creditByKey = recaps.flatMap { r -> r.dailyCredits.map { (d, v) -> (r.employee.id to d) to v } }.toMap()
         sb.append("\n## Detail harian\n\n")
-        sb.append("| Tanggal | Nama | Status | Jam masuk | Telat (menit) | Lokasi | Jarak toko | Koordinat | Catatan |\n")
-        sb.append("|---|---|---|---|---:|---|---:|---|---|\n")
+        sb.append("| Tanggal | Nama | Status | Jam masuk | Telat (menit) | Tambah saldo | Lokasi | Jarak toko | Koordinat | Catatan |\n")
+        sb.append("|---|---|---|---|---:|---:|---|---:|---|---|\n")
         records.sortedWith(compareBy({ it.date }, { it.timestamp })).forEach { r ->
             val hadir = r.status == Status.TEPAT || r.status == Status.TELAT
             val lokasi = if (!hadir) "" else if (r.inLocation) "di lokasi" else "DI LUAR (${r.locationNote})"
             val jarak = r.distanceMeters?.let { GeoRule.formatDistance(it) } ?: ""
             val koord = if (r.latitude != null && r.longitude != null) GeoRule.formatCoord(r.latitude, r.longitude) else ""
-            sb.append("| ${r.date} | ${names[r.employeeId] ?: r.employeeId} | ${r.status} | ${r.timeIn} | ${r.lateMinutes} | $lokasi | $jarak | $koord | ${r.note} |\n")
+            val tambah = creditByKey[r.employeeId to r.date]?.let { rupiahPlus(it) } ?: "-"
+            sb.append("| ${r.date} | ${names[r.employeeId] ?: r.employeeId} | ${r.status} | ${r.timeIn} | ${r.lateMinutes} | $tambah | $lokasi | $jarak | $koord | ${r.note} |\n")
         }
         return sb.toString()
     }

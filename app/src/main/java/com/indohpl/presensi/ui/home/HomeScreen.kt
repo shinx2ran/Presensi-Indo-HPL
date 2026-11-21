@@ -47,17 +47,27 @@ import com.indohpl.presensi.data.AttendanceRecord
 import com.indohpl.presensi.data.Employee
 import com.indohpl.presensi.data.Repository
 import com.indohpl.presensi.data.Status
+import com.indohpl.presensi.domain.BonusCalculator
+import com.indohpl.presensi.domain.EmployeeRecap
+import com.indohpl.presensi.domain.LateRule
+import com.indohpl.presensi.domain.RecapFormatter
 import com.indohpl.presensi.ui.Avatar
+import com.indohpl.presensi.ui.NoGainChip
 import com.indohpl.presensi.ui.PhotoDialog
+import com.indohpl.presensi.ui.PlusChip
 import com.indohpl.presensi.ui.StatusPill
+import com.indohpl.presensi.ui.StreakChip
 import com.indohpl.presensi.ui.longLabel
+import com.indohpl.presensi.ui.theme.Green
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private val CLOCK: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
+private val HHMM: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -82,7 +92,22 @@ fun HomeScreen(
     val settings by repository.settingsStore.settings.collectAsStateWithLifecycle(AppSettings())
     val holidays by repository.observeHolidays().collectAsStateWithLifecycle(emptyList())
 
+    val ym = YearMonth.from(today)
+    val monthRecords by remember(ym) { repository.observeMonth(ym) }
+        .collectAsStateWithLifecycle(emptyList())
+
     val recordByEmployee = remember(todayRecords) { todayRecords.associateBy { it.employeeId } }
+    val recapByEmployee: Map<Long, EmployeeRecap> = remember(ym, today, employees, monthRecords, settings, holidays) {
+        BonusCalculator.recap(
+            ym,
+            today,
+            employees.filter { it.active },
+            monthRecords,
+            settings.workDays,
+            holidays.mapNotNull { h -> runCatching { LocalDate.parse(h.date) }.getOrNull() }.toSet(),
+            settings.bonusConfig(),
+        ).associateBy { it.employee.id }
+    }
     val holiday = holidays.firstOrNull { it.date == today.toString() }
     val isWorkDay = today.dayOfWeek in settings.workDays && holiday == null
     val scope = rememberCoroutineScope()
@@ -126,9 +151,18 @@ fun HomeScreen(
                 )
             }
             items(employees.filter { it.active }, key = { it.id }) { emp ->
+                val recap = recapByEmployee[emp.id]
+                // Batas tepat waktu = jam masuk + toleransi; dipakai untuk petunjuk motivasi sebelum absen.
+                // Hanya di hari kerja: absen di hari libur tidak menambah saldo, jadi jangan dijanjikan.
+                val onTimeUntil = if (!isWorkDay) null else LateRule.parseWorkStart(settings.workStartFor(emp.gender))
+                    ?.plusMinutes(settings.toleranceFor(emp.gender).toLong())
+                    ?.format(HHMM)
                 EmployeeCard(
                     employee = emp,
                     record = recordByEmployee[emp.id],
+                    recap = recap,
+                    today = today,
+                    onTimeUntil = onTimeUntil,
                     onCheckIn = { onCheckIn(emp.id) },
                     onShowPhoto = { path -> photoToShow = path to "${emp.name} · ${recordByEmployee[emp.id]?.timeIn ?: ""}" },
                     onExcuse = { status -> excuseDialog = emp to status },
@@ -221,6 +255,9 @@ private fun InfoBanner(
 private fun EmployeeCard(
     employee: Employee,
     record: AttendanceRecord?,
+    recap: EmployeeRecap?,
+    today: LocalDate,
+    onTimeUntil: String?,
     onCheckIn: () -> Unit,
     onShowPhoto: (String) -> Unit,
     onExcuse: (String) -> Unit,
@@ -239,6 +276,13 @@ private fun EmployeeCard(
                 Spacer(Modifier.height(4.dp))
                 if (record == null) {
                     Text("Belum absen", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (recap != null && onTimeUntil != null && recap.perDayAmount > 0L) {
+                        Text(
+                            "Tepat waktu sampai $onTimeUntil = ${RecapFormatter.rupiahPlus(recap.perDayAmount)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         StatusPill(
@@ -254,6 +298,30 @@ private fun EmployeeCard(
                         if ((record.status == Status.TEPAT || record.status == Status.TELAT) && !record.inLocation) {
                             Spacer(Modifier.width(6.dp))
                             StatusPill(status = Status.TELAT, text = "Luar lokasi")
+                        }
+                    }
+                    if (recap != null) {
+                        val credit = recap.dailyCredits[today.toString()] ?: 0L
+                        if (credit > 0L) {
+                            Spacer(Modifier.height(6.dp))
+                            PlusChip(credit)
+                        } else if (record.status == Status.TELAT) {
+                            Spacer(Modifier.height(6.dp))
+                            NoGainChip("+Rp 0 · telat")
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Saldo bulan ini ", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                RecapFormatter.rupiah(recap.earned),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Green,
+                            )
+                        }
+                        if (recap.streak >= 2) {
+                            Spacer(Modifier.height(6.dp))
+                            StreakChip(recap.streak)
                         }
                     }
                 }
