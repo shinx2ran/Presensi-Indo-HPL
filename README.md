@@ -41,7 +41,7 @@ Beranda ──tap "Absen"──▶ [1] Biometrik HP kasir ──▶ [2] Selfie (
 
   Menit telat dihitung dari jam masuk (perempuan datang 07:56 = telat 11 menit).
 * Hanya **jam masuk** yang dicatat, tidak ada check-out.
-* Kasir bisa menandai **Izin** / **Sakit** dari menu ⋮ di kartu karyawan (tanpa selfie, tidak dipotong).
+* Kasir bisa menandai **Izin** / **Sakit** dari menu ⋮ di kartu karyawan (tanpa selfie). Hari itu tidak dihitung untuk uang rajin, saldo tidak berkurang.
 * Menu ⋮ juga bisa **Lihat foto** dan **Hapus catatan hari ini** (untuk salah tekan).
 
 ## Lokasi toko (GPS)
@@ -54,28 +54,31 @@ Beranda ──tap "Absen"──▶ [1] Biometrik HP kasir ──▶ [2] Selfie (
 
 ## Aturan uang rajin: saldo yang bertambah (bisa diubah di Pengaturan)
 
-Saldo uang rajin tiap karyawan **mulai dari Rp 0 di awal bulan dan bertambah** setiap hari kerja yang dihitung. Tampil hijau dengan tanda "+".
+Saldo uang rajin tiap karyawan **mulai dari Rp 0 di awal bulan dan hanya bertambah**. Maksimal **Rp 350.000** per bulan.
 
 | Hari kerja | Tambahan saldo |
 |---|---|
-| Tepat waktu | **+Rp 8.333** (250.000 ÷ jumlah hari kerja bulan itu) |
-| Izin / sakit | +Rp 8.333 (sama seperti aturan lama: tidak dipotong) |
+| Tepat waktu | **+Rp 11.667** (350.000 ÷ jumlah hari kerja bulan itu) |
 | Telat | +Rp 0 |
-| Alpa (tidak absen tanpa izin/sakit) | +Rp 0 (bisa diubah jadi tetap menambah) |
+| Izin / sakit | +Rp 0 (tidak dihitung) |
+| Bolos (tidak absen tanpa keterangan) | +Rp 0 (tidak dihitung) |
 | Absen di hari libur toko | tidak dihitung |
 
-Rumus: `saldo = bulat(250.000 × hari_menambah ÷ hari_kerja)`, jadi sebulan penuh tepat waktu = **tepat Rp 250.000**. Hasil akhir bulan sama dengan aturan lama (selisih pembulatan paling banyak beberapa rupiah).
+Rumus: `saldo = bulat(350.000 × hari_tepat_waktu ÷ hari_kerja)`, jadi sebulan penuh tepat waktu = **tepat Rp 350.000**. Saldo tidak pernah berkurang.
+HP yang masih menyimpan nilai lama Rp 250.000 dinaikkan otomatis sekali ke Rp 350.000; nilai lain yang diisi owner tidak diubah.
 
-| Parameter | Default |
+### Desain yang memotivasi
+
+| Fitur | Prinsip |
 |---|---|
-| Uang rajin maksimal per bulan | Rp 250.000 |
-| Tambahan per hari tepat waktu | 0 = otomatis (dibagi rata). Kalau diisi angka tetap, saldo tetap tidak melebihi maksimal |
-| Hari kerja | Senin–Minggu, kecuali tanggal libur toko |
+| Beranda: "+Rp 11.667 jatah hari ini · sampai 07:55", lalu "Tinggal 6 menit" di 10 menit terakhir | Hadiah hari ini dibuat nyata, batas waktu yang sebenarnya |
+| Layar hasil: "Tepat waktu, Sara!", getar singkat, saldo menghitung naik, konfeti saat target tercapai, "Besok jatah +Rp 11.667 menunggu" | Hadiah langsung, langkah berikutnya jelas |
+| Target 100rb / 200rb / 300rb / 🏆 350rb di bilah saldo dan "Tinggal 3 hari lagi ke Rp 200.000" | Semangat naik saat target dekat; satu kali telat tidak merusak sebulan |
+| Kalender bulan ("jangan putus rantainya"), 🔥 hari beruntun, rekor bulan ini | Kebiasaan; izin/sakit hanya menjeda, telat/bolos memutus |
+| Telat berwarna kuning, izin/sakit abu-abu; Beranda tidak menampilkan "+Rp 0" | HP dipakai bersama, tidak mempermalukan siapa pun |
+| "Hari ini sudah 3 orang tepat waktu 🙌" | Semangat tim tanpa menyebut siapa yang telat |
 
-Tempat melihat saldo:
-- **Beranda**: setelah absen muncul pil hijau "+Rp 8.333" dan saldo bulan ini; sebelum absen ada petunjuk "Tepat waktu sampai 07:55 = +Rp 8.333".
-- **Layar hasil absen**: "+Rp 8.333" besar dan saldo yang menghitung naik, bilah kemajuan, dan 🔥 hari beruntun.
-- **Tab Saldo**: saldo per karyawan, bilah menuju maksimal, "masih bisa sampai", dan riwayat harian dengan tambahan per hari.
+Yang sengaja tidak dipakai: peringkat, warna merah, kata "dipotong", hadiah acak, dan apa pun yang memperlambat absen pagi.
 
 ## Hak akses: kasir vs owner
 

@@ -12,7 +12,8 @@ object LateRule {
 
     /**
      * Menit keterlambatan, dibulatkan ke bawah, minimal 0.
-     * Contoh: jam masuk 08:00, toleransi 5, datang 08:05:59 -> 0; datang 08:06:00 -> 6.
+     * Batas tepat waktu adalah jam masuk + toleransi, tepat pada detik :00.
+     * Contoh: jam masuk 08:00, toleransi 5: datang 08:05:00 -> 0 (tepat); 08:05:30 -> 5; 08:06:00 -> 6.
      */
     fun lateMinutes(arrival: LocalTime, workStart: String, toleranceMinutes: Int): Int {
         val start = parseWorkStart(workStart) ?: LocalTime.of(8, 0)

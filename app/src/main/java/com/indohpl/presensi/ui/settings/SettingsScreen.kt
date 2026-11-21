@@ -86,7 +86,6 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
     var toleranceM by remember { mutableStateOf("") }
     var bonus by remember { mutableStateOf("") }
     var deduction by remember { mutableStateOf("") }
-    var deductAbsent by remember { mutableStateOf(true) }
     var workDays by remember { mutableStateOf<Set<DayOfWeek>>(emptySet()) }
     var storeLatLon by remember { mutableStateOf("") }      // "lat, lon"
     var radius by remember { mutableStateOf("100") }
@@ -123,7 +122,6 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
             toleranceM = s.toleranceMale.toString()
             bonus = s.monthlyBonus.toString()
             deduction = s.perDayAmount.toString()
-            deductAbsent = s.deductAbsent
             workDays = s.workDays
             storeLatLon = if (s.storeLat != null && s.storeLon != null) GeoRule.formatCoord(s.storeLat, s.storeLon) else ""
             radius = s.radiusMeters.toString()
@@ -162,7 +160,6 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
                     toleranceMale = tolM,
                     monthlyBonus = bon,
                     perDayAmount = ded,
-                    deductAbsent = deductAbsent,
                     workDays = workDays,
                     storeLat = latLon?.first,
                     storeLon = latLon?.second,
@@ -253,21 +250,15 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
                         com.indohpl.presensi.domain.BonusCalculator.workDays(ym, workDays, emptySet()).size
                     }
                     val per = com.indohpl.presensi.domain.BonusCalculator.saldoFor(
-                        com.indohpl.presensi.domain.BonusConfig(b, 0, true), sample, 1,
+                        com.indohpl.presensi.domain.BonusConfig(b, 0), sample, 1,
                     )
-                    Text("0 = otomatis: uang rajin maksimal dibagi rata ke hari kerja (bulan ini $sample hari kerja, ${RecapFormatter.rupiahPlus(per)} per hari). Telat tidak menambah. Saldo tidak pernah melebihi uang rajin maksimal.")
+                    Text("0 = otomatis: uang rajin maksimal dibagi rata ke hari kerja (bulan ini $sample hari kerja, ${RecapFormatter.rupiahPlus(per)} per hari). Saldo tidak pernah melebihi uang rajin maksimal.")
                 },
             )
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.weight(1f)) {
-                    Text("Hari alpa tidak menambah saldo")
-                    Text(
-                        "Alpa = tidak absen di hari kerja tanpa izin/sakit. Kalau dimatikan, alpa tetap menambah seperti izin.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(checked = deductAbsent, onCheckedChange = { deductAbsent = it })
-            }
+            Text(
+                "Hanya hari tepat waktu yang menambah saldo. Telat, izin, sakit, dan bolos tidak dihitung.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Text("Lokasi toko Indo HPL", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
                 "Selfie hanya sah bila HP berada dalam radius ini dari titik toko. Ambil titiknya sambil berdiri di dalam toko, atau salin koordinat dari Google Maps (tekan lama lokasi → angka di atas).",

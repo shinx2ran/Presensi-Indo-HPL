@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -57,7 +58,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -68,13 +71,13 @@ import com.indohpl.presensi.data.AppSettings
 import com.indohpl.presensi.data.Employee
 import com.indohpl.presensi.data.Repository
 import com.indohpl.presensi.data.Status
+import com.indohpl.presensi.domain.DayKind
 import com.indohpl.presensi.domain.EmployeeRecap
 import com.indohpl.presensi.domain.GeoCheck
 import com.indohpl.presensi.domain.GeoRule
 import com.indohpl.presensi.domain.LateRule
 import com.indohpl.presensi.domain.RecapFormatter
 import com.indohpl.presensi.ui.AnimatedRupiah
-import com.indohpl.presensi.ui.NoGainChip
 import com.indohpl.presensi.ui.PlusChip
 import com.indohpl.presensi.ui.SaldoProgress
 import com.indohpl.presensi.ui.StatusPill
@@ -82,7 +85,6 @@ import com.indohpl.presensi.ui.StreakChip
 import com.indohpl.presensi.ui.findFragmentActivity
 import com.indohpl.presensi.ui.theme.Amber
 import com.indohpl.presensi.ui.theme.Green
-import com.indohpl.presensi.ui.theme.Red
 import com.indohpl.presensi.util.Biometric
 import com.indohpl.presensi.util.BiometricResult
 import com.indohpl.presensi.util.LocationHelper
@@ -93,6 +95,7 @@ import java.time.LocalDateTime
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -444,108 +447,23 @@ fun CheckInScreen(
                     val ok = status == Status.TEPAT
                     val recap = savedRecap
                     val credit = savedCredit
+                    val emp = employee
+                    val name = emp?.name ?: ""
+                    val hhmm = DateTimeFormatter.ofPattern("HH:mm")
+                    val deadline = emp?.let { deadlineText(settings, it.gender) }
                     val saldoBefore = if (recap != null) recap.earned - credit else 0L
+                    // Target saldo yang baru saja terlewati oleh absen hari ini (bila ada) -> confetti + pesan perayaan.
+                    val crossed: Long? = if (recap != null && credit > 0) {
+                        recap.milestones.firstOrNull { it > saldoBefore && it <= recap.earned }
+                    } else {
+                        null
+                    }
+                    val haptic = LocalHapticFeedback.current
                     var gainShown by remember { mutableStateOf(false) }
-                    LaunchedEffect(Unit) { gainShown = true }
-                    Column(
-                        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Spacer(Modifier.height(16.dp))
-                        Icon(
-                            Icons.Filled.CheckCircle,
-                            null,
-                            Modifier.size(96.dp),
-                            tint = if (ok) Green else Red,
-                        )
-                        Spacer(Modifier.height(16.dp))
-                        Text(
-                            "${employee?.name} tercatat hadir",
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center,
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        StatusPill(status = status, text = if (ok) "Tepat waktu" else "Telat $late menit")
-                        if (recap != null) {
-                            Spacer(Modifier.height(20.dp))
-                            if (credit > 0) {
-                                // Tepat waktu: rayakan uang yang masuk.
-                                AnimatedVisibility(visible = gainShown, enter = scaleIn(initialScale = 0.6f) + fadeIn()) {
-                                    PlusChip(credit, big = true)
-                                }
-                                Spacer(Modifier.height(16.dp))
-                                Text(
-                                    "Saldo bulan ini",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                AnimatedRupiah(
-                                    target = recap.earned,
-                                    from = saldoBefore,
-                                    style = MaterialTheme.typography.displaySmall,
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                SaldoProgress(recap.earned, recap.maxThisMonth, Modifier.fillMaxWidth())
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    "dari ${RecapFormatter.rupiah(recap.maxThisMonth)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                if (recap.streak >= 2) {
-                                    Spacer(Modifier.height(12.dp))
-                                    StreakChip(recap.streak)
-                                }
-                            } else {
-                                // Telat (atau hari yang tidak menambah saldo): jelaskan dengan ramah.
-                                if (!ok) {
-                                    NoGainChip("+Rp 0")
-                                    Spacer(Modifier.height(12.dp))
-                                    Text(
-                                        "Hari ini tidak menambah saldo.",
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        textAlign = TextAlign.Center,
-                                    )
-                                    val emp = employee
-                                    val limit = emp?.let { e ->
-                                        LateRule.parseWorkStart(settings.workStartFor(e.gender))
-                                            ?.plusMinutes(settings.toleranceFor(e.gender).toLong())
-                                            ?.format(DateTimeFormatter.ofPattern("HH:mm"))
-                                    }
-                                    if (limit != null) {
-                                        Spacer(Modifier.height(4.dp))
-                                        Text(
-                                            "Besok datang sampai $limit untuk ${RecapFormatter.rupiahPlus(recap.perDayAmount)}",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            textAlign = TextAlign.Center,
-                                        )
-                                    }
-                                    Spacer(Modifier.height(12.dp))
-                                }
-                                Text(
-                                    "Saldo bulan ini ${RecapFormatter.rupiah(recap.earned)}",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                            }
-                        }
-                        Spacer(Modifier.height(16.dp))
-                        shot?.geo?.let { g ->
-                            Text(
-                                if (g.inLocation) "Di lokasi Indo HPL" else "Di luar lokasi toko (${g.note})",
-                                color = if (g.inLocation) Green else MaterialTheme.colorScheme.error,
-                                textAlign = TextAlign.Center,
-                            )
-                        }
-                        Text(
-                            shot?.capturedAt?.format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")) ?: "",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.height(24.dp))
-                        Button(onClick = {
-                            val name = employee?.name
+                    var finished by remember { mutableStateOf(false) }
+                    val finish: () -> Unit = {
+                        if (!finished) {
+                            finished = true
                             onFinished(
                                 when {
                                     credit > 0 -> "$name: tepat waktu, ${RecapFormatter.rupiahPlus(credit)}"
@@ -553,11 +471,217 @@ fun CheckInScreen(
                                     else -> "$name: telat $late menit"
                                 },
                             )
-                        }) { Text("Selesai") }
+                        }
+                    }
+                    LaunchedEffect(Unit) {
+                        gainShown = true
+                        if (recap != null && credit > 0) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    }
+                    LaunchedEffect(Unit) {
+                        delay(8000)
+                        finish()
+                    }
+                    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+                    Box(Modifier.fillMaxSize()) {
+                        Column(
+                            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Spacer(Modifier.height(16.dp))
+                            if (recap != null && credit > 0) {
+                                // ---- Tepat waktu: rayakan sekarang ----
+                                Icon(Icons.Filled.CheckCircle, null, Modifier.size(80.dp), tint = Green)
+                                Spacer(Modifier.height(12.dp))
+                                Text(
+                                    "Tepat waktu, $name!",
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center,
+                                )
+                                Spacer(Modifier.height(12.dp))
+                                AnimatedVisibility(visible = gainShown, enter = scaleIn(initialScale = 0.6f) + fadeIn()) {
+                                    PlusChip(credit, big = true)
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Text("masuk saldo kamu", style = MaterialTheme.typography.bodyMedium, color = muted)
+                                Spacer(Modifier.height(8.dp))
+                                AnimatedRupiah(
+                                    target = recap.earned,
+                                    from = saldoBefore,
+                                    style = MaterialTheme.typography.displaySmall,
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                SaldoProgress(recap.earned, recap.maxThisMonth, Modifier.fillMaxWidth(), milestones = recap.milestones)
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    "${recap.creditedDays} dari ${recap.workDaysInMonth} hari tepat waktu",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = muted,
+                                    textAlign = TextAlign.Center,
+                                )
+                                val next = recap.nextMilestone
+                                val goal: String? = when {
+                                    recap.earned >= recap.maxThisMonth -> "🏆 Full bulan! ${RecapFormatter.rupiah(recap.maxThisMonth)}"
+                                    crossed != null -> "🎉 ${RecapFormatter.rupiah(crossed)} tercapai!"
+                                    next != null ->
+                                        "Tinggal ${recap.daysToNextMilestone} hari tepat waktu lagi ke ${RecapFormatter.rupiah(next)}"
+                                    else -> null
+                                }
+                                if (goal != null) {
+                                    Spacer(Modifier.height(12.dp))
+                                    Text(
+                                        goal,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Green,
+                                        textAlign = TextAlign.Center,
+                                    )
+                                }
+                                if (recap.streak >= 2) {
+                                    Spacer(Modifier.height(12.dp))
+                                    StreakChip(recap.streak)
+                                }
+                                if (recap.bestStreak > recap.streak) {
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        "Rekor bulan ini ${recap.bestStreak} hari",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = muted,
+                                        textAlign = TextAlign.Center,
+                                    )
+                                }
+                                Spacer(Modifier.height(12.dp))
+                                Text(
+                                    tomorrowLine(recap, shot?.capturedAt?.toLocalDate() ?: LocalDate.now(), deadline, late = false),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = muted,
+                                    textAlign = TextAlign.Center,
+                                )
+                            } else if (recap != null && !ok) {
+                                // ---- Telat: tenang, semangat untuk besok ----
+                                Icon(Icons.Filled.Schedule, null, Modifier.size(80.dp), tint = Amber)
+                                Spacer(Modifier.height(12.dp))
+                                // Tampilkan detik supaya jelas: batas berlaku tepat pada HH:mm:00 (sama dengan LateRule).
+                                val recordedAt = shot?.capturedAt?.format(DateTimeFormatter.ofPattern("HH:mm:ss"))
+                                Text(
+                                    buildString {
+                                        append(if (recordedAt != null) "Absen tercatat $recordedAt." else "Absen tercatat.")
+                                        if (deadline != null) append(" Batas tepat waktu $deadline:00.")
+                                    },
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    textAlign = TextAlign.Center,
+                                )
+                                Spacer(Modifier.height(12.dp))
+                                Text(
+                                    "Hari ini tidak menambah saldo.",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    textAlign = TextAlign.Center,
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    "Saldo kamu tetap ${RecapFormatter.rupiah(recap.earned)}. Tidak berkurang.",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    textAlign = TextAlign.Center,
+                                )
+                                Spacer(Modifier.height(12.dp))
+                                Text(
+                                    tomorrowLine(recap, shot?.capturedAt?.toLocalDate() ?: LocalDate.now(), deadline, late = true),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = muted,
+                                    textAlign = TextAlign.Center,
+                                )
+                                if (recap.bestStreak >= 2) {
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        "Rekor bulan ini tetap ${recap.bestStreak} hari.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = muted,
+                                        textAlign = TextAlign.Center,
+                                    )
+                                }
+                            } else {
+                                // ---- Rekap tidak tersedia (atau tepat waktu tanpa tambahan saldo) ----
+                                Icon(Icons.Filled.CheckCircle, null, Modifier.size(96.dp), tint = if (ok) Green else Amber)
+                                Spacer(Modifier.height(16.dp))
+                                Text(
+                                    "$name tercatat hadir",
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center,
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                StatusPill(status = status, text = if (ok) "Tepat waktu" else "Telat $late menit")
+                                if (recap != null) {
+                                    Spacer(Modifier.height(12.dp))
+                                    Text(
+                                        "Saldo kamu ${RecapFormatter.rupiah(recap.earned)}",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        textAlign = TextAlign.Center,
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(16.dp))
+                            shot?.geo?.let { g ->
+                                Text(
+                                    if (g.inLocation) "Di lokasi Indo HPL" else "Di luar lokasi toko (${g.note})",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (g.inLocation) Green else MaterialTheme.colorScheme.error,
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+                            Text(
+                                shot?.capturedAt?.format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")) ?: "",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = muted,
+                            )
+                            Spacer(Modifier.height(24.dp))
+                            Button(onClick = { finish() }) { Text("Selesai") }
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "Kembali otomatis dalam beberapa detik",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = muted,
+                                textAlign = TextAlign.Center,
+                            )
+                            Spacer(Modifier.height(16.dp))
+                        }
+                        // Confetti hanya saat saldo baru melewati target (100rb, 200rb, ...). Tidak menangkap sentuhan.
+                        ConfettiBurst(trigger = crossed != null, modifier = Modifier.fillMaxSize())
                     }
                 }
             }
         }
+    }
+}
+
+/** Batas tepat waktu "HH:mm" untuk jenis kelamin ini (jam masuk + toleransi), atau null bila jam masuk tidak terbaca. */
+private fun deadlineText(settings: AppSettings, gender: String): String? =
+    LateRule.parseWorkStart(settings.workStartFor(gender))
+        ?.plusMinutes(settings.toleranceFor(gender).toLong())
+        ?.format(DateTimeFormatter.ofPattern("HH:mm"))
+
+/** Kalimat tentang hari berikutnya, dari kalender rekap. Hanya membaca nilai dari [EmployeeRecap]. */
+private fun tomorrowLine(recap: EmployeeRecap, today: LocalDate, deadline: String?, late: Boolean): String {
+    val tomorrow = today.plusDays(1)
+    if (YearMonth.from(tomorrow) != YearMonth.from(today)) {
+        return "Besok bulan baru. Saldo mulai lagi dari Rp 0, semangat!"
+    }
+    if (recap.calendar.firstOrNull { it.date == tomorrow }?.kind == DayKind.OFF) {
+        val nextWork = recap.calendar.firstOrNull { it.date.isAfter(tomorrow) && it.kind != DayKind.OFF }?.date
+        return when {
+            nextWork == null -> "Besok libur. Jatah berikutnya mulai bulan depan."
+            nextWork == tomorrow.plusDays(1) -> "Besok libur. Jatah berikutnya menunggu lusa."
+            else -> "Besok libur. Jatah berikutnya tanggal ${nextWork.dayOfMonth}."
+        }
+    }
+    if (recap.nextCredit <= 0L) return "Saldo bulan ini sudah maksimal."
+    val amount = RecapFormatter.rupiahPlus(recap.nextCredit)
+    return if (late) {
+        "Besok mulai lagi: jatah $amount" + (if (deadline != null) ", absen sampai $deadline." else ".")
+    } else {
+        "Besok jatah $amount menunggu." + (if (deadline != null) " Absen sampai $deadline." else "")
     }
 }
 

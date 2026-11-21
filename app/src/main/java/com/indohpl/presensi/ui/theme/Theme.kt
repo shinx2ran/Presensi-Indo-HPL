@@ -13,6 +13,8 @@ val Amber = Color(0xFFB7791F)
 val AmberLight = Color(0xFFFFF0C7)
 val Red = Color(0xFFB3261E)
 val RedLight = Color(0xFFFFDAD6)
+val Neutral = Color(0xFF5F6368)       // izin/sakit: netral, tanpa kesan salah
+val NeutralLight = Color(0xFFE8EAED)
 val Blue = Color(0xFF2F5FA8)
 val BlueLight = Color(0xFFD9E5FF)
 

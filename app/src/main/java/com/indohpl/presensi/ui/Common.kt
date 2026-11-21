@@ -32,12 +32,10 @@ import com.indohpl.presensi.data.Employee
 import com.indohpl.presensi.data.Status
 import com.indohpl.presensi.ui.theme.Amber
 import com.indohpl.presensi.ui.theme.AmberLight
-import com.indohpl.presensi.ui.theme.Blue
-import com.indohpl.presensi.ui.theme.BlueLight
 import com.indohpl.presensi.ui.theme.Green
 import com.indohpl.presensi.ui.theme.GreenLight
-import com.indohpl.presensi.ui.theme.Red
-import com.indohpl.presensi.ui.theme.RedLight
+import com.indohpl.presensi.ui.theme.Neutral
+import com.indohpl.presensi.ui.theme.NeutralLight
 import java.io.File
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -65,9 +63,10 @@ fun Context.findFragmentActivity(): FragmentActivity? {
 /** Warna latar/teks untuk status presensi. */
 fun statusColors(status: String): Pair<Color, Color> = when (status) {
     Status.TEPAT -> GreenLight to Green
-    Status.TELAT -> RedLight to Red
-    Status.IZIN -> AmberLight to Amber
-    Status.SAKIT -> BlueLight to Blue
+    // Telat kuning (bukan merah) dan izin/sakit abu-abu: HP dipakai bersama, jangan mempermalukan siapa pun.
+    Status.TELAT -> AmberLight to Amber
+    Status.IZIN -> NeutralLight to Neutral
+    Status.SAKIT -> NeutralLight to Neutral
     else -> AmberLight to Amber
 }
 

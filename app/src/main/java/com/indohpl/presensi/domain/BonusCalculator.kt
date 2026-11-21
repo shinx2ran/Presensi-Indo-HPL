@@ -9,13 +9,24 @@ import java.time.YearMonth
 
 /** Parameter uang rajin. Dipisah dari DataStore supaya bisa diuji tanpa Android. */
 data class BonusConfig(
-    /** Uang rajin maksimal per bulan, mis. 250.000 (didapat penuh kalau semua hari kerja tepat waktu). */
+    /** Uang rajin maksimal per bulan, mis. 350.000 (didapat penuh kalau semua hari kerja tepat waktu). */
     val monthlyBonus: Long,
     /** Tambahan saldo per hari tepat waktu. 0 = otomatis: [monthlyBonus] dibagi rata ke hari kerja bulan itu. */
     val perDayOverride: Long,
-    /** true = hari alpa tidak menambah saldo (bawaan). false = alpa diperlakukan seperti izin (tetap menambah). */
-    val deductAbsent: Boolean,
 )
+
+/** Keadaan satu tanggal untuk kalender bulanan ("jangan putus rantainya"). */
+enum class DayKind {
+    EARNED,   // hari kerja, tepat waktu: saldo bertambah
+    LATE,     // hari kerja, telat: +Rp 0
+    EXCUSED,  // hari kerja, izin/sakit: +Rp 0 (tidak dihitung)
+    ABSENT,   // hari kerja yang sudah lewat tanpa catatan (bolos): +Rp 0
+    PENDING,  // hari ini, hari kerja, belum absen: masih ada kesempatan
+    FUTURE,   // hari kerja yang belum tiba
+    OFF,      // bukan hari kerja / libur toko
+}
+
+data class DayMark(val date: java.time.LocalDate, val kind: DayKind, val credit: Long)
 
 /** Hasil rekap satu karyawan untuk satu bulan. */
 data class EmployeeRecap(
@@ -27,12 +38,12 @@ data class EmployeeRecap(
     val telat: Int,
     val izin: Int,
     val sakit: Int,
-    val alpa: Int,                 // hari kerja sebelum hari ini tanpa catatan apa pun
+    val alpa: Int,                 // hari kerja sebelum hari ini tanpa catatan apa pun (bolos)
     val outsideLocation: Int,      // hadir tapi selfie di luar radius toko / GPS tidak ada
     val totalLateMinutes: Int,
     /** Tambahan "rata-rata" per hari tepat waktu, untuk ditampilkan (mis. 8.333). */
     val perDayAmount: Long,
-    /** Jumlah hari kerja yang menambah saldo (tepat + izin + sakit [+ alpa bila deductAbsent = false]). */
+    /** Jumlah hari kerja yang menambah saldo (= hari kerja tepat waktu). */
     val creditedDays: Int,
     /** Saldo uang rajin bulan ini sejauh ini (bertambah tiap hari tepat waktu). */
     val earned: Long,
@@ -41,12 +52,33 @@ data class EmployeeRecap(
     /** Saldo tertinggi yang masih bisa dicapai bila sisa hari kerja (termasuk hari ini bila belum absen) tepat waktu. */
     val maxReachable: Long,
     /**
-     * Tambahan saldo per tanggal (yyyy-MM-dd) untuk hari kerja yang punya catatan: nilai > 0 untuk hari yang menambah,
-     * 0 untuk telat. Jumlah semua nilai = [earned]. Hari alpa yang tetap menambah (deductAbsent = false) ikut tercatat.
+     * Tambahan saldo per tanggal (yyyy-MM-dd) untuk hari kerja yang punya catatan: nilai > 0 untuk tepat waktu,
+     * 0 untuk telat/izin/sakit. Jumlah semua nilai = [earned]. Tanggal tanpa catatan atau di luar hari kerja tidak ada.
      */
     val dailyCredits: Map<String, Long>,
-    /** Hari kerja berturut-turut tepat waktu sampai hari ini (hari ini dilewati bila belum absen). */
+    /** Hari kerja sampai hari ini yang TIDAK menambah (telat, izin, sakit, bolos). Hari ini yang belum absen tidak dihitung. */
+    val missedDays: Int,
+    /** Uang yang terlewat dari [missedDays] (saldo seandainya hari-hari itu tepat waktu, dikurangi [earned]). */
+    val missed: Long,
+    /** Hari kerja yang masih tersisa (setelah hari ini, ditambah hari ini bila belum absen). */
+    val remainingDays: Int,
+    /** Tambahan PERSIS untuk hari tepat waktu berikutnya (11.667 atau 11.666 karena pembulatan); 0 bila tidak ada sisa hari. */
+    val nextCredit: Long,
+    /** Kalender seluruh bulan, satu entri per tanggal. */
+    val calendar: List<DayMark>,
+    /**
+     * Hari kerja berturut-turut tepat waktu sampai hari ini. Hari ini yang belum absen dilewati; izin/sakit
+     * MENJEDA (tidak menambah, tidak memutus); telat dan bolos memutus.
+     */
     val streak: Int,
+    /** Rekor beruntun terpanjang di bulan ini (aturan sama dengan [streak]). */
+    val bestStreak: Int,
+    /** Titik target saldo bulan ini, naik: kelipatan 100.000 di bawah maksimal, lalu maksimal (mis. 100rb, 200rb, 300rb, 350rb). */
+    val milestones: List<Long>,
+    /** Target berikutnya yang lebih besar dari saldo dan masih bisa dicapai; null bila tidak ada. */
+    val nextMilestone: Long?,
+    /** Hari tepat waktu yang masih dibutuhkan untuk mencapai [nextMilestone] (0 bila null). */
+    val daysToNextMilestone: Int,
     val isFullMonth: Boolean,      // tepat waktu di semua hari kerja bulan itu
 )
 
@@ -74,15 +106,22 @@ object BonusCalculator {
         }
     }
 
-    /** Tambahan per hari untuk ditampilkan ("+Rp 8.333"). */
+    /** Kelipatan 100.000 di bawah [max], lalu [max] sendiri. Contoh 350.000 -> [100.000, 200.000, 300.000, 350.000]. */
+    fun milestonesFor(max: Long): List<Long> {
+        if (max <= 0) return emptyList()
+        val step = 100_000L
+        return (generateSequence(step) { it + step }.takeWhile { it < max }.toList() + max)
+    }
+
+    /** Tambahan per hari untuk ditampilkan ("+Rp 11.667"). */
     fun perDayAmount(config: BonusConfig, workDaysInMonth: Int): Long = when {
         config.perDayOverride > 0 -> config.perDayOverride
         workDaysInMonth <= 0 -> 0L
         else -> saldoFor(config, workDaysInMonth, 1)
     }
 
-    private fun credits(status: String?): Boolean =
-        status == Status.TEPAT || status == Status.IZIN || status == Status.SAKIT
+    /** Hanya hari kerja TEPAT WAKTU yang menambah saldo. Telat, izin, sakit, dan bolos tidak dihitung. */
+    private fun credits(status: String?): Boolean = status == Status.TEPAT
 
     /**
      * Rekap semua karyawan untuk bulan [ym].
@@ -109,35 +148,79 @@ object BonusCalculator {
             // Alpa hanya hari kerja yang SUDAH lewat; hari ini belum alpa karena karyawan masih bisa absen.
             val alpaDates = elapsed.filter { it.isBefore(today) && byDate[it.toString()] == null }.toSet()
 
-            // Urutkan hari kerja yang punya catatan (atau alpa yang tetap menambah) menurut tanggal, lalu bagikan
-            // selisih saldo kumulatif ke tiap hari supaya jumlah semua tambahan selalu sama persis dengan saldo.
+            // Urutkan hari kerja menurut tanggal, lalu bagikan selisih saldo kumulatif ke tiap hari tepat waktu
+            // supaya jumlah semua tambahan selalu sama persis dengan saldo.
             val daily = LinkedHashMap<String, Long>()
             var credited = 0
             for (d in days) {
                 val key = d.toString()
-                val status = byDate[key]?.status
-                val gives = credits(status) || (status == null && !config.deductAbsent && d in alpaDates)
-                when {
-                    gives -> {
-                        val before = saldoFor(config, n, credited)
-                        credited++
-                        daily[key] = saldoFor(config, n, credited) - before
-                    }
-                    status == Status.TELAT -> daily[key] = 0L
+                val status = byDate[key]?.status ?: continue
+                if (credits(status)) {
+                    val before = saldoFor(config, n, credited)
+                    credited++
+                    daily[key] = saldoFor(config, n, credited) - before
+                } else {
+                    daily[key] = 0L // telat / izin / sakit: tercatat tetapi tidak menambah
                 }
             }
             val earned = saldoFor(config, n, credited)
+            // Hari kerja sampai hari ini yang tidak menambah; hari ini yang belum absen masih kesempatan, jadi tidak dihitung.
+            val missedDays = elapsed.count { d ->
+                val status = byDate[d.toString()]?.status
+                if (status == null) d.isBefore(today) else !credits(status)
+            }
+            val missed = saldoFor(config, n, credited + missedDays) - earned
 
             // Sisa kesempatan: hari kerja setelah hari ini, ditambah hari ini bila belum ada catatan.
             val remaining = days.count { it.isAfter(today) || (it == today && byDate[it.toString()] == null) }
             val maxReachable = saldoFor(config, n, credited + remaining)
 
-            // Streak: mundur dari hari ini; hari ini yang belum absen dilewati (masih ada kesempatan).
+            // Streak: mundur dari hari ini; hari ini yang belum absen dilewati (masih ada kesempatan),
+            // izin/sakit menjeda, telat/bolos memutus.
             var streak = 0
             for (d in elapsed.asReversed()) {
                 val status = byDate[d.toString()]?.status
                 if (d == today && status == null) continue
-                if (status == Status.TEPAT) streak++ else break
+                when (status) {
+                    Status.TEPAT -> streak++
+                    Status.IZIN, Status.SAKIT -> continue
+                    else -> break
+                }
+            }
+            var bestStreak = 0
+            var run = 0
+            for (d in elapsed) {
+                val status = byDate[d.toString()]?.status
+                when {
+                    status == Status.TEPAT -> { run++; if (run > bestStreak) bestStreak = run }
+                    status == Status.IZIN || status == Status.SAKIT -> {}
+                    d == today && status == null -> {}
+                    else -> run = 0
+                }
+            }
+
+            // Target saldo dan berapa hari tepat waktu lagi untuk mencapainya (dihitung dengan saldoFor, jadi selalu benar).
+            val max = saldoFor(config, n, n)
+            val milestones = milestonesFor(max)
+            val next = milestones.firstOrNull { it > earned && it <= maxReachable }
+            val daysToNext = if (next == null) 0 else
+                (1..remaining).firstOrNull { k -> saldoFor(config, n, credited + k) >= next } ?: 0
+
+            val workSet = days.toHashSet()
+            val calendar = (1..ym.lengthOfMonth()).map { dom ->
+                val d = ym.atDay(dom)
+                val key = d.toString()
+                val status = byDate[key]?.status
+                val kind = when {
+                    d !in workSet -> DayKind.OFF
+                    status == Status.TEPAT -> DayKind.EARNED
+                    status == Status.TELAT -> DayKind.LATE
+                    status == Status.IZIN || status == Status.SAKIT -> DayKind.EXCUSED
+                    d.isBefore(today) -> DayKind.ABSENT
+                    d == today -> DayKind.PENDING
+                    else -> DayKind.FUTURE
+                }
+                DayMark(d, kind, daily[key] ?: 0L)
             }
 
             val tepat = recs.count { it.status == Status.TEPAT }
@@ -157,11 +240,20 @@ object BonusCalculator {
                 perDayAmount = perDay,
                 creditedDays = credited,
                 earned = earned,
-                maxThisMonth = saldoFor(config, n, n),
+                maxThisMonth = max,
                 maxReachable = maxReachable,
                 dailyCredits = daily,
+                missedDays = missedDays,
+                missed = missed,
+                remainingDays = remaining,
+                nextCredit = if (remaining > 0) saldoFor(config, n, credited + 1) - earned else 0L,
                 streak = streak,
-                isFullMonth = n > 0 && days.all { byDate[it.toString()]?.status == Status.TEPAT },
+                bestStreak = bestStreak,
+                milestones = milestones,
+                nextMilestone = if (daysToNext > 0) next else null,
+                daysToNextMilestone = daysToNext,
+                calendar = calendar,
+                isFullMonth = n > 0 && max > 0 && days.all { byDate[it.toString()]?.status == Status.TEPAT },
             )
         }
     }

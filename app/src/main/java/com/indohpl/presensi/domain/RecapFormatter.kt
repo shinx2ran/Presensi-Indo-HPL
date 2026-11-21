@@ -83,8 +83,7 @@ object RecapFormatter {
         sb.append("Dibuat: $generatedAt\n")
         sb.append("Jam masuk: $rulesText. ")
         val perDay = recaps.firstOrNull()?.perDayAmount ?: 0
-        sb.append("Uang rajin bertambah ${rupiahPlus(perDay)} setiap hari tepat waktu (izin/sakit juga menambah")
-        sb.append(if (config.deductAbsent) "; telat dan alpa tidak menambah)" else "; telat tidak menambah, alpa tetap menambah)")
+        sb.append("Uang rajin bertambah ${rupiahPlus(perDay)} setiap hari tepat waktu (telat, izin, sakit, dan bolos tidak dihitung)")
         sb.append(", maksimal ${rupiah(recaps.firstOrNull()?.maxThisMonth ?: config.monthlyBonus)} bulan ini.\n\n")
 
         sb.append("## Ringkasan\n\n")

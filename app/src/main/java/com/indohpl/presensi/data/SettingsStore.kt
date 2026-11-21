@@ -27,9 +27,8 @@ data class AppSettings(
     val toleranceFemale: Int = 10,
     val workStartMale: String = "08:00",
     val toleranceMale: Int = 5,
-    val monthlyBonus: Long = 250_000,         // uang rajin penuh per bulan (Rp)
+    val monthlyBonus: Long = 350_000,         // uang rajin maksimal per bulan (Rp)
     val perDayAmount: Long = 0,               // tambahan per hari tepat waktu; 0 = otomatis (uang rajin / hari kerja)
-    val deductAbsent: Boolean = true,         // true = hari alpa tidak menambah saldo
     val workDays: Set<DayOfWeek> = DayOfWeek.values().toSet(), // Senin–Minggu
     // --- Lokasi toko Indo HPL ---
     val storeLat: Double? = null,             // null = titik toko belum diatur
@@ -51,7 +50,6 @@ data class AppSettings(
     fun bonusConfig() = BonusConfig(
         monthlyBonus = monthlyBonus,
         perDayOverride = perDayAmount,
-        deductAbsent = deductAbsent,
     )
 }
 
@@ -74,6 +72,21 @@ class SettingsStore(private val context: Context) {
         val RETENTION = intPreferencesKey("retention_months")
         val PIN_HASH = stringPreferencesKey("owner_pin_hash")
         val PIN_SALT = stringPreferencesKey("owner_pin_salt")
+    }
+
+    // ---------- Migrasi sekali jalan ----------
+
+    /**
+     * Uang rajin naik dari 250.000 ke 350.000 (permintaan owner, November 2026). HP yang sudah menyimpan nilai bawaan
+     * lama 250.000 dinaikkan sekali; nilai lain yang sengaja diisi owner tidak diubah.
+     */
+    suspend fun migrateBonusTo350() {
+        val done = booleanPreferencesKey("migrated_bonus_350")
+        context.dataStore.edit { p ->
+            if (p[done] == true) return@edit
+            if (p[Keys.BONUS] == 250_000L) p[Keys.BONUS] = 350_000L
+            p[done] = true
+        }
     }
 
     // ---------- PIN owner (pengaman tab Pengaturan) ----------
@@ -114,7 +127,7 @@ class SettingsStore(private val context: Context) {
             p[Keys.BONUS] = s.monthlyBonus
             p[Keys.PER_DAY_AMOUNT] = s.perDayAmount
             p.remove(Keys.LATE_DEDUCTION)
-            p[Keys.DEDUCT_ABSENT] = s.deductAbsent
+            p.remove(Keys.DEDUCT_ABSENT) // aturan lama; bolos kini selalu tidak menambah
             p[Keys.WORK_DAYS] = s.workDays.map { it.value }.sorted().joinToString(",")
             if (s.storeLat != null && s.storeLon != null) {
                 p[Keys.STORE_LAT] = s.storeLat
@@ -144,7 +157,6 @@ class SettingsStore(private val context: Context) {
             toleranceMale = this[Keys.TOLERANCE_M] ?: d.toleranceMale,
             monthlyBonus = this[Keys.BONUS] ?: d.monthlyBonus,
             perDayAmount = this[Keys.PER_DAY_AMOUNT] ?: d.perDayAmount,
-            deductAbsent = this[Keys.DEDUCT_ABSENT] ?: d.deductAbsent,
             workDays = days ?: d.workDays,
             storeLat = this[Keys.STORE_LAT],
             storeLon = this[Keys.STORE_LON],

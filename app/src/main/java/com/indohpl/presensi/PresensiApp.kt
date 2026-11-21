@@ -19,6 +19,7 @@ class PresensiApp : Application() {
         repository = Repository(this)
         appScope.launch {
             repository.ensureSeeded()
+            runCatching { repository.settingsStore.migrateBonusTo350() }
             runCatching { repository.cleanupOldData(automatic = true) }
         }
         CleanupScheduler.scheduleDaily(this)

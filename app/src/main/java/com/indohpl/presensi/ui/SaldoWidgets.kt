@@ -15,7 +15,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,7 +24,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -97,18 +101,63 @@ fun AnimatedRupiah(
     Text(RecapFormatter.rupiah(shown), modifier = modifier, style = style, color = color, fontWeight = FontWeight.ExtraBold)
 }
 
-/** Bilah kemajuan saldo menuju maksimal bulan ini (hijau). */
+/**
+ * Bilah kemajuan saldo menuju maksimal bulan ini (hijau), dengan tanda target di [milestones] (mis. 100rb, 200rb,
+ * 300rb, 350rb). Label target yang sudah tercapai berwarna hijau; target terakhir ditandai 🏆.
+ */
 @Composable
-fun SaldoProgress(earned: Long, max: Long, modifier: Modifier = Modifier) {
+fun SaldoProgress(earned: Long, max: Long, modifier: Modifier = Modifier, milestones: List<Long> = emptyList()) {
     val target = if (max <= 0) 0f else (earned.toFloat() / max.toFloat()).coerceIn(0f, 1f)
     val fraction by animateFloatAsState(target, tween(900, easing = FastOutSlowInEasing), label = "saldo")
-    LinearProgressIndicator(
-        progress = { fraction },
-        modifier = modifier.fillMaxWidth().height(10.dp),
-        color = Green,
-        trackColor = GreenLight,
-        strokeCap = StrokeCap.Round,
-    )
+    val tickColor = MaterialTheme.colorScheme.surface
+    Column(modifier.fillMaxWidth()) {
+        Canvas(Modifier.fillMaxWidth().height(12.dp)) {
+            val radius = CornerRadius(size.height / 2, size.height / 2)
+            drawRoundRect(GreenLight, cornerRadius = radius)
+            if (fraction > 0f) drawRoundRect(Green, size = Size(size.width * fraction, size.height), cornerRadius = radius)
+            if (max > 0) {
+                milestones.filter { it in 1 until max }.forEach { m ->
+                    val x = size.width * (m.toFloat() / max.toFloat())
+                    drawLine(tickColor, Offset(x, 0f), Offset(x, size.height), strokeWidth = 2.dp.toPx())
+                }
+            }
+        }
+        if (max > 0 && milestones.isNotEmpty()) MilestoneLabels(milestones, max, earned)
+    }
+}
+
+/** "100rb" untuk 100.000. */
+fun shortRupiah(v: Long): String = if (v % 1000L == 0L) "${v / 1000}rb" else RecapFormatter.rupiah(v)
+
+/** Label target diletakkan tepat di bawah tandanya, tidak keluar dari tepi. */
+@Composable
+private fun MilestoneLabels(milestones: List<Long>, max: Long, earned: Long) {
+    val reached = Green
+    val pending = MaterialTheme.colorScheme.onSurfaceVariant
+    Layout(
+        content = {
+            milestones.forEach { m ->
+                Text(
+                    if (m >= max) "\uD83C\uDFC6" else shortRupiah(m),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (earned >= m) reached else pending,
+                    fontWeight = if (earned >= m) FontWeight.Bold else FontWeight.Normal,
+                )
+            }
+        },
+        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+    ) { measurables, constraints ->
+        val placeables = measurables.map { it.measure(constraints.copy(minWidth = 0)) }
+        val width = constraints.maxWidth
+        val height = placeables.maxOfOrNull { it.height } ?: 0
+        layout(width, height) {
+            placeables.forEachIndexed { i, p ->
+                val center = (width * (milestones[i].toFloat() / max.toFloat())).toInt()
+                val x = (center - p.width / 2).coerceIn(0, (width - p.width).coerceAtLeast(0))
+                p.placeRelative(x, 0)
+            }
+        }
+    }
 }
 
 /** "🔥 5 hari beruntun" bila streak ≥ 2; tidak tampil bila kurang. */

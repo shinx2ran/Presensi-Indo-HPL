@@ -52,15 +52,16 @@ import com.indohpl.presensi.domain.EmployeeRecap
 import com.indohpl.presensi.domain.LateRule
 import com.indohpl.presensi.domain.RecapFormatter
 import com.indohpl.presensi.ui.Avatar
-import com.indohpl.presensi.ui.NoGainChip
 import com.indohpl.presensi.ui.PhotoDialog
 import com.indohpl.presensi.ui.PlusChip
 import com.indohpl.presensi.ui.StatusPill
 import com.indohpl.presensi.ui.StreakChip
 import com.indohpl.presensi.ui.longLabel
 import com.indohpl.presensi.ui.theme.Green
+import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
@@ -112,6 +113,19 @@ fun HomeScreen(
     val isWorkDay = today.dayOfWeek in settings.workDays && holiday == null
     val scope = rememberCoroutineScope()
 
+    // Kalimat semangat tim: hanya jumlah, tanpa menyebut nama yang telat.
+    val activeEmployees = employees.filter { it.active }
+    val onTimeToday = activeEmployees.count { recordByEmployee[it.id]?.status == Status.TEPAT }
+    val everyoneAccounted = activeEmployees.isNotEmpty() && activeEmployees.all { recordByEmployee[it.id] != null }
+    val anyLateToday = activeEmployees.any { recordByEmployee[it.id]?.status == Status.TELAT }
+    val teamLine = when {
+        onTimeToday == 0 && everyoneAccounted -> "Besok kesempatan baru. Semangat, tim!"
+        onTimeToday == 0 -> "Ayo, jadi yang pertama tepat waktu hari ini!"
+        everyoneAccounted && !anyLateToday -> "Semua yang hadir tepat waktu hari ini. Kerja bagus, tim! 🎉"
+        else -> "Hari ini sudah $onTimeToday orang tepat waktu 🙌"
+    }
+    val nowTime = now.toLocalTime()
+
     var photoToShow by remember { mutableStateOf<Pair<String, String>?>(null) }
     var excuseDialog by remember { mutableStateOf<Pair<Employee, String>?>(null) }
     var deleteDialog by remember { mutableStateOf<Pair<Employee, AttendanceRecord>?>(null) }
@@ -146,23 +160,22 @@ fun HomeScreen(
                     rules = "P ${settings.workStartFemale} (+${settings.toleranceFemale} mnt) · L ${settings.workStartMale} (+${settings.toleranceMale} mnt)",
                     isWorkDay = isWorkDay,
                     holidayName = holiday?.name,
-                    done = todayRecords.count { it.status == Status.TEPAT || it.status == Status.TELAT },
-                    total = employees.count { it.active },
+                    teamLine = teamLine,
                 )
             }
             items(employees.filter { it.active }, key = { it.id }) { emp ->
                 val recap = recapByEmployee[emp.id]
                 // Batas tepat waktu = jam masuk + toleransi; dipakai untuk petunjuk motivasi sebelum absen.
                 // Hanya di hari kerja: absen di hari libur tidak menambah saldo, jadi jangan dijanjikan.
-                val onTimeUntil = if (!isWorkDay) null else LateRule.parseWorkStart(settings.workStartFor(emp.gender))
+                val onTimeUntil: LocalTime? = if (!isWorkDay) null else LateRule.parseWorkStart(settings.workStartFor(emp.gender))
                     ?.plusMinutes(settings.toleranceFor(emp.gender).toLong())
-                    ?.format(HHMM)
                 EmployeeCard(
                     employee = emp,
                     record = recordByEmployee[emp.id],
                     recap = recap,
                     today = today,
                     onTimeUntil = onTimeUntil,
+                    nowTime = nowTime,
                     onCheckIn = { onCheckIn(emp.id) },
                     onShowPhoto = { path -> photoToShow = path to "${emp.name} · ${recordByEmployee[emp.id]?.timeIn ?: ""}" },
                     onExcuse = { status -> excuseDialog = emp to status },
@@ -184,7 +197,7 @@ fun HomeScreen(
             title = { Text("Tandai ${if (status == Status.IZIN) "Izin" else "Sakit"} — ${emp.name}") },
             text = {
                 Column {
-                    Text("Hari ini (${today.longLabel()}) dicatat sebagai ${if (status == Status.IZIN) "izin" else "sakit"}, tanpa selfie. Tidak dipotong dari uang rajin.")
+                    Text("Hari ini (${today.longLabel()}) dicatat sebagai ${if (status == Status.IZIN) "izin" else "sakit"}, tanpa selfie. Hari ini tidak dihitung untuk uang rajin, saldo tidak berkurang.")
                     Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
                         value = note,
@@ -231,8 +244,7 @@ private fun InfoBanner(
     rules: String,
     isWorkDay: Boolean,
     holidayName: String?,
-    done: Int,
-    total: Int,
+    teamLine: String,
 ) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
         Column(Modifier.padding(16.dp)) {
@@ -243,7 +255,7 @@ private fun InfoBanner(
                 when {
                     holidayName != null -> "Hari libur: $holidayName. Presensi tetap bisa dicatat."
                     !isWorkDay -> "Hari ini bukan hari kerja. Presensi tetap bisa dicatat."
-                    else -> "Sudah hadir $done dari $total karyawan."
+                    else -> teamLine
                 },
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -257,7 +269,8 @@ private fun EmployeeCard(
     record: AttendanceRecord?,
     recap: EmployeeRecap?,
     today: LocalDate,
-    onTimeUntil: String?,
+    onTimeUntil: LocalTime?,
+    nowTime: LocalTime,
     onCheckIn: () -> Unit,
     onShowPhoto: (String) -> Unit,
     onExcuse: (String) -> Unit,
@@ -276,12 +289,31 @@ private fun EmployeeCard(
                 Spacer(Modifier.height(4.dp))
                 if (record == null) {
                     Text("Belum absen", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (recap != null && onTimeUntil != null && recap.perDayAmount > 0L) {
-                        Text(
-                            "Tepat waktu sampai $onTimeUntil = ${RecapFormatter.rupiahPlus(recap.perDayAmount)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    if (recap != null && onTimeUntil != null) {
+                        // Sama dengan LateRule: tepat waktu bila jam absen <= batas (HH:mm:00).
+                        val stillOnTime = !nowTime.isAfter(onTimeUntil)
+                        val secondsLeft = Duration.between(nowTime, onTimeUntil).seconds
+                        val minutesLeft = ((secondsLeft + 59) / 60).toInt()
+                        Spacer(Modifier.height(6.dp))
+                        if (stillOnTime && recap.nextCredit > 0L) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                PlusChip(recap.nextCredit)
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    if (minutesLeft in 1..10) "Tinggal $minutesLeft menit"
+                                    else "jatah hari ini · sampai ${onTimeUntil.format(HHMM)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        } else if (!stillOnTime) {
+                            Text(
+                                "Tetap absen ya, kehadiran tetap dicatat.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -305,9 +337,6 @@ private fun EmployeeCard(
                         if (credit > 0L) {
                             Spacer(Modifier.height(6.dp))
                             PlusChip(credit)
-                        } else if (record.status == Status.TELAT) {
-                            Spacer(Modifier.height(6.dp))
-                            NoGainChip("+Rp 0 · telat")
                         }
                         Spacer(Modifier.height(6.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {

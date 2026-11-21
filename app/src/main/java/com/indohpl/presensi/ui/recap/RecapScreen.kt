@@ -23,6 +23,8 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -32,6 +34,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -46,10 +49,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.indohpl.presensi.data.AppSettings
 import com.indohpl.presensi.data.AttendanceRecord
+import com.indohpl.presensi.data.Employee
 import com.indohpl.presensi.data.Repository
 import com.indohpl.presensi.data.Status
 import com.indohpl.presensi.domain.BonusCalculator
 import com.indohpl.presensi.domain.EmployeeRecap
+import com.indohpl.presensi.domain.LateRule
 import com.indohpl.presensi.domain.RecapFormatter
 import com.indohpl.presensi.ui.Avatar
 import com.indohpl.presensi.ui.NoGainChip
@@ -65,6 +70,7 @@ import com.indohpl.presensi.ui.theme.Green
 import com.indohpl.presensi.ui.theme.GreenLight
 import java.time.LocalDate
 import java.time.YearMonth
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -118,24 +124,25 @@ fun RecapScreen(repository: Repository) {
             }
             item {
                 val first = recaps.firstOrNull()
+                var showHelp by remember { mutableStateOf(false) }
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                "Setiap hari tepat waktu",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.SemiBold,
+                                "Uang rajin bulan ini",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
                                 modifier = Modifier.weight(1f),
                             )
-                            val per = first?.perDayAmount ?: 0L
-                            if (per > 0L) PlusChip(per) else Text("-", style = MaterialTheme.typography.bodyLarge)
+                            IconButton(onClick = { showHelp = true }) {
+                                Icon(Icons.Filled.Info, contentDescription = "Cara kerja uang rajin")
+                            }
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                "Maksimal bulan ini",
+                                "Maksimal ",
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.weight(1f),
                             )
                             Text(
                                 RecapFormatter.rupiah(first?.maxThisMonth ?: 0L),
@@ -144,20 +151,29 @@ fun RecapScreen(repository: Repository) {
                                 color = Green,
                             )
                         }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "Setiap hari tepat waktu",
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.weight(1f),
+                            )
+                            val per = first?.perDayAmount ?: 0L
+                            if (per > 0L) PlusChip(per)
+                        }
                         Text(
-                            "Izin/sakit juga menambah · telat tidak menambah · " +
-                                if (settings.deductAbsent) "alpa tidak menambah." else "alpa tetap menambah.",
+                            "Telat, izin, sakit, dan bolos tidak dihitung. Saldo tidak pernah berkurang.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        if (isCurrentMonth) {
-                            Text(
-                                "Angka berjalan: saldo bertambah setiap absen.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
                     }
+                }
+                if (showHelp) {
+                    HelpDialog(
+                        recap = first,
+                        employees = employees.filter { it.active },
+                        settings = settings,
+                        onDismiss = { showHelp = false },
+                    )
                 }
             }
             items(recaps, key = { it.employee.id }) { r ->
@@ -184,6 +200,48 @@ fun RecapScreen(repository: Repository) {
     photoToShow?.let { (path, title) ->
         PhotoDialog(path = path, title = title, onDismiss = { photoToShow = null })
     }
+}
+
+/** Pelajaran singkat "Cara kerja uang rajin". Batas waktu per gender dihitung dari pengaturan. */
+@Composable
+private fun HelpDialog(
+    recap: EmployeeRecap?,
+    employees: List<Employee>,
+    settings: AppSettings,
+    onDismiss: () -> Unit,
+) {
+    val max = recap?.maxThisMonth ?: 0L
+    val per = recap?.perDayAmount ?: 0L
+    val days = recap?.workDaysInMonth ?: 0
+    fun deadline(gender: String): String {
+        val start = settings.workStartFor(gender)
+        val t = LateRule.parseWorkStart(start)?.plusMinutes(settings.toleranceFor(gender).toLong())
+        return if (t == null) start else String.format(Locale.US, "%02d:%02d", t.hour, t.minute)
+    }
+    val groups = listOf("P", "L").mapNotNull { g ->
+        val names = employees.filter { it.gender == g }.map { it.name }
+        if (names.isEmpty()) null else names.joinToString(", ") + ": sampai " + deadline(g)
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Mengerti") } },
+        title = { Text("Cara kerja uang rajin") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Maksimal sebulan " + RecapFormatter.rupiah(max) + ".")
+                if (per > 0L) {
+                    Text("Setiap hari tepat waktu: " + RecapFormatter.rupiahPlus(per) + " ($days hari kerja bulan ini).")
+                }
+                Text("Telat, izin, sakit, dan bolos: tidak dihitung. Saldo tidak pernah berkurang.")
+                if (groups.isNotEmpty()) {
+                    Text("Batas tepat waktu:", fontWeight = FontWeight.SemiBold)
+                    groups.forEach { Text(it) }
+                }
+                Text("Izin dan sakit menjeda hari beruntun, tidak memutus. Telat dan bolos memutus.")
+                Text("Sebulan penuh tepat waktu = tepat " + RecapFormatter.rupiah(max) + ".")
+            }
+        },
+    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -219,14 +277,15 @@ private fun SaldoCard(
                 style = MaterialTheme.typography.headlineLarge,
             )
             Spacer(Modifier.height(8.dp))
-            SaldoProgress(earned = recap.earned, max = recap.maxThisMonth)
-            Spacer(Modifier.height(4.dp))
+            SaldoProgress(earned = recap.earned, max = recap.maxThisMonth, milestones = recap.milestones)
+            Spacer(Modifier.height(6.dp))
             Text(
-                "dari ${RecapFormatter.rupiah(recap.maxThisMonth)}",
+                "${recap.creditedDays} dari ${recap.workDaysInMonth} hari tepat waktu",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            val hasChips = todayCredit > 0 || recap.streak >= 2 || recap.isFullMonth
+            val showStreak = isCurrentMonth && recap.streak >= 2
+            val hasChips = todayCredit > 0 || showStreak || recap.isFullMonth
             if (hasChips) {
                 Spacer(Modifier.height(8.dp))
                 FlowRow(
@@ -244,7 +303,7 @@ private fun SaldoCard(
                             )
                         }
                     }
-                    StreakChip(recap.streak)
+                    if (showStreak) StreakChip(recap.streak)
                     if (recap.isFullMonth) {
                         Text(
                             "🏆 Full bulan!",
@@ -258,24 +317,56 @@ private fun SaldoCard(
                     }
                 }
             }
-            if (isCurrentMonth && recap.maxReachable > recap.earned) {
+            // Satu baris tujuan: bulan berjalan = target terdekat; bulan lalu = laporan akhir.
+            val goalLine: String? = if (isCurrentMonth) {
+                val next = recap.nextMilestone
+                when {
+                    recap.maxThisMonth > 0 && recap.earned >= recap.maxThisMonth -> if (recap.isFullMonth) null else "🏆 Full bulan!"
+                    next != null -> "Tinggal ${recap.daysToNextMilestone} hari tepat waktu lagi ke " + RecapFormatter.rupiah(next)
+                    recap.maxReachable > recap.earned -> "Maksimal bulan ini " + RecapFormatter.rupiah(recap.maxReachable)
+                    else -> null
+                }
+            } else {
+                "Selesai: ${recap.creditedDays} dari ${recap.workDaysInMonth} hari = " + RecapFormatter.rupiah(recap.earned)
+            }
+            if (goalLine != null) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Masih bisa sampai " + RecapFormatter.rupiah(recap.maxReachable),
+                    goalLine,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = Green,
                 )
             }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "Tepat ${recap.tepat} · Telat ${recap.telat} · Izin/Sakit ${recap.izin + recap.sakit} · Alpa ${recap.alpa}" +
-                    (if (recap.outsideLocation > 0) " · Luar lokasi ${recap.outsideLocation}" else ""),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (recap.bestStreak >= 2) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Rekor bulan ini ${recap.bestStreak} hari 🔥",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             AnimatedVisibility(visible = expanded) {
                 Column(Modifier.padding(top = 12.dp)) {
+                    HorizontalDivider()
+                    Spacer(Modifier.height(12.dp))
+                    SaldoCalendar(recap.calendar)
+                    if (isCurrentMonth && recap.missedDays > 0) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Tidak masuk saldo bulan ini " + RecapFormatter.rupiah(recap.missed) + " (${recap.missedDays} hari)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Tepat ${recap.tepat} · Telat ${recap.telat} · Izin/Sakit ${recap.izin + recap.sakit} · Tidak absen ${recap.alpa}" +
+                            (if (recap.outsideLocation > 0) " · Luar lokasi ${recap.outsideLocation}" else ""),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(8.dp))
                     HorizontalDivider()
                     if (records.isEmpty()) {
                         Text("Belum ada catatan bulan ini.", Modifier.padding(top = 12.dp), style = MaterialTheme.typography.bodyMedium)
@@ -297,6 +388,8 @@ private fun SaldoCard(
                                     PlusChip(credit)
                                 } else if (rec.status == Status.TELAT) {
                                     NoGainChip("+Rp 0 · telat ${rec.lateMinutes} mnt")
+                                } else if (rec.status == Status.IZIN || rec.status == Status.SAKIT) {
+                                    NoGainChip("tidak dihitung")
                                 } else if (credit == null) {
                                     NoGainChip("libur") // bukan hari kerja / hari libur toko
                                 } else {
