@@ -72,6 +72,40 @@ class SettingsStore(private val context: Context) {
         val RETENTION = intPreferencesKey("retention_months")
         val PIN_HASH = stringPreferencesKey("owner_pin_hash")
         val PIN_SALT = stringPreferencesKey("owner_pin_salt")
+        val LAST_SEEN_VERSION = longPreferencesKey("last_seen_version_code")
+        val LAST_BACKUP_AT = longPreferencesKey("last_backup_at")
+        val LAST_BACKUP_FILE = stringPreferencesKey("last_backup_file")
+        val LAST_CLEANUP_AT = longPreferencesKey("last_cleanup_at")
+    }
+
+    // ---------- Catatan versi, cadangan, dan pembersihan (dipakai Inspector) ----------
+
+    /** versionCode yang terakhir dibuka aplikasi; null = belum pernah tercatat. */
+    suspend fun lastSeenVersionCode(): Long? = context.dataStore.data.first()[Keys.LAST_SEEN_VERSION]
+
+    suspend fun setLastSeenVersionCode(v: Long) {
+        context.dataStore.edit { it[Keys.LAST_SEEN_VERSION] = v }
+    }
+
+    /** Cadangan terakhir yang berhasil: (waktu epoch millis, nama file); null = belum pernah. */
+    val lastBackup: Flow<Pair<Long, String>?> = context.dataStore.data.map { p ->
+        val at = p[Keys.LAST_BACKUP_AT]
+        val file = p[Keys.LAST_BACKUP_FILE]
+        if (at != null && file != null) at to file else null
+    }
+
+    suspend fun setLastBackup(at: Long, file: String) {
+        context.dataStore.edit { p ->
+            p[Keys.LAST_BACKUP_AT] = at
+            p[Keys.LAST_BACKUP_FILE] = file
+        }
+    }
+
+    /** Waktu (epoch millis) pembersihan data lama terakhir dijalankan; null = belum pernah. */
+    suspend fun lastCleanupAt(): Long? = context.dataStore.data.first()[Keys.LAST_CLEANUP_AT]
+
+    suspend fun setLastCleanupAt(at: Long) {
+        context.dataStore.edit { it[Keys.LAST_CLEANUP_AT] = at }
     }
 
     // ---------- Migrasi sekali jalan ----------

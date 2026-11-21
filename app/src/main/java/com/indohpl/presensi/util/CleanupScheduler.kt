@@ -22,8 +22,11 @@ object CleanupScheduler {
 
 class CleanupWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result = try {
-        val n = (applicationContext as PresensiApp).repository.cleanupOldData(automatic = true)
+        val repository = (applicationContext as PresensiApp).repository
+        val n = repository.cleanupOldData(automatic = true)
         if (n > 0) Log.i("Cleanup", "Menghapus $n catatan lama")
+        // Sekalian simpan cadangan harian ke Download/PresensiIndoHPL (gagal tidak menggagalkan pembersihan).
+        runCatching { repository.backupNow() }
         Result.success()
     } catch (e: Exception) {
         Log.w("Cleanup", "gagal: ${e.message}")

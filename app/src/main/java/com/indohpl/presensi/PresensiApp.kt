@@ -21,6 +21,7 @@ class PresensiApp : Application() {
             repository.ensureSeeded()
             runCatching { repository.settingsStore.migrateBonusTo350() }
             runCatching { repository.cleanupOldData(automatic = true) }
+            repository.backupSoon()
         }
         CleanupScheduler.scheduleDaily(this)
     }

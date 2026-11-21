@@ -65,6 +65,16 @@ interface AttendanceDao {
     @Query("SELECT MAX(date) FROM attendance")
     suspend fun newestDate(): String?
 
+    @Query("SELECT MIN(date) FROM attendance")
+    suspend fun oldestDate(): String?
+
+    @Query("SELECT COUNT(*) FROM attendance")
+    suspend fun count(): Int
+
+    /** Lepas tautan foto yang filenya sudah hilang (catatan presensi tetap ada). */
+    @Query("UPDATE attendance SET photoPath = NULL WHERE id = :id")
+    suspend fun clearPhotoPath(id: Long)
+
     /** Bulan (yyyy-MM) yang punya catatan sebelum tanggal tertentu. */
     @Query("SELECT DISTINCT substr(date, 1, 7) FROM attendance WHERE date < :date")
     suspend fun monthsBefore(date: String): List<String>

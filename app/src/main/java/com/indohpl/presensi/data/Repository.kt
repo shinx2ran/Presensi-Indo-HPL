@@ -1,6 +1,11 @@
 package com.indohpl.presensi.data
 
 import android.content.Context
+import kotlinx.coroutines.sync.withLock
+import androidx.room.withTransaction
+import com.indohpl.presensi.data.backup.BackupCodec
+import com.indohpl.presensi.data.backup.BackupData
+import com.indohpl.presensi.data.backup.LocalBackup
 import com.indohpl.presensi.domain.CsvImport
 import com.indohpl.presensi.domain.GeoCheck
 import com.indohpl.presensi.domain.Retention
@@ -10,10 +15,19 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Pintu tunggal ke database + pengaturan. Dibuat sekali di [com.indohpl.presensi.PresensiApp]. */
 class Repository(context: Context) {
+    private val appContext: Context = context.applicationContext
     private val db = AppDatabase.get(context)
     val settingsStore = SettingsStore(context)
     val employeeDao = db.employeeDao()
@@ -23,19 +37,31 @@ class Repository(context: Context) {
     /** Folder foto selfie: <filesDir>/photos/yyyy-MM/ */
     val photoRoot: File = File(context.filesDir, "photos")
 
-    /** Daftar karyawan awal. Bisa diubah nanti lewat database tanpa mengubah kode. */
+    /** Cadangan otomatis ke Download/PresensiIndoHPL (tetap ada walau aplikasi dihapus). */
+    val localBackup = LocalBackup(appContext)
+
+    companion object {
+        /** Daftar karyawan awal. Bisa diubah nanti lewat database tanpa mengubah kode. */
+        val DEFAULT_EMPLOYEES: List<Employee> = listOf(
+            Employee(1, "Sara", "P"),
+            Employee(2, "Riyanti", "P"),
+            Employee(3, "Evan", "L"),
+            Employee(4, "Madi", "L"),
+            Employee(5, "Roni", "L"),
+        )
+    }
+
     suspend fun ensureSeeded() {
         if (employeeDao.count() == 0) {
-            employeeDao.insertAll(
-                listOf(
-                    Employee(1, "Sara", "P"),
-                    Employee(2, "Riyanti", "P"),
-                    Employee(3, "Evan", "L"),
-                    Employee(4, "Madi", "L"),
-                    Employee(5, "Roni", "L"),
-                ),
-            )
+            employeeDao.insertAll(DEFAULT_EMPLOYEES)
         }
+    }
+
+    /** Kembalikan karyawan bawaan yang hilang (yang sudah ada tidak diubah). Mengembalikan jumlah yang ditambahkan. */
+    suspend fun seedMissingEmployees(): Int {
+        val before = employeeDao.count()
+        employeeDao.insertAll(DEFAULT_EMPLOYEES)
+        return employeeDao.count() - before
     }
 
     fun observeEmployees(): Flow<List<Employee>> = employeeDao.observeAll()
@@ -96,6 +122,7 @@ class Repository(context: Context) {
             locationNote = geo?.note ?: "GPS tidak didapat",
         )
         val id = attendanceDao.insert(rec)
+        backupSoon()
         return rec.copy(id = id)
     }
 
@@ -114,12 +141,14 @@ class Repository(context: Context) {
                 note = note,
             ),
         )
+        backupSoon()
         return true
     }
 
     suspend fun deleteRecord(record: AttendanceRecord) {
         attendanceDao.delete(record)
         record.photoPath?.let { runCatching { File(it).delete() } }
+        backupSoon()
     }
 
     data class ImportResult(
@@ -174,6 +203,7 @@ class Repository(context: Context) {
                 if (id == -1L) duplicates++ else imported++
             }
         }
+        if (imported > 0) backupSoon()
         return ImportResult(imported, duplicates, unknown, tooOld, errors)
     }
 
@@ -188,6 +218,8 @@ class Repository(context: Context) {
     ): Int {
         val months = months ?: settingsStore.current().retentionMonths
         val cutoff = Retention.cutoffDate(today, months).toString()
+        // Catat bahwa pembersihan sudah DIPERIKSA (juga bila pengaman menundanya), supaya Pemeriksaan tidak terus memperingatkan.
+        settingsStore.setLastCleanupAt(System.currentTimeMillis())
         if (automatic) {
             val newest = attendanceDao.newestDate()?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
             if (!Retention.shouldAutoClean(today, newest, attendanceDao.monthsBefore(cutoff).size)) return 0
@@ -200,6 +232,189 @@ class Repository(context: Context) {
         photoRoot.listFiles()?.forEach { dir ->
             if (dir.isDirectory && dir.name < cutoff.take(7)) dir.deleteRecursively()
         }
+        if (deleted > 0) backupSoon()
         return deleted
+    }
+
+    // ---------- Cadangan & pulihkan ----------
+
+    private val backupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var backupJob: Job? = null
+
+    /** Isi cadangan lengkap saat ini (tanpa foto). */
+    suspend fun buildBackup(): BackupData = BackupData(
+        createdAt = LocalDateTime.now().toString(),
+        appVersion = installedVersionName(),
+        employees = employeeDao.getAll(),
+        attendance = attendanceDao.getAll(),
+        holidays = holidayDao.getAll(),
+        settings = settingsStore.current(),
+    )
+
+    @Suppress("DEPRECATION")
+    private fun installedVersionName(): String =
+        runCatching { appContext.packageManager.getPackageInfo(appContext.packageName, 0).versionName }.getOrNull() ?: ""
+
+    /**
+     * Simpan cadangan sekarang ke Download/PresensiIndoHPL. Tidak pernah melempar error.
+     * Database tanpa satu pun catatan presensi dilewati supaya HP yang baru dipasang ulang tidak
+     * menimpa cadangan hari yang sama dengan file kosong sebelum sempat dipulihkan.
+     */
+    suspend fun backupNow(): Result<String> = backupMutex.withLock { backupNowLocked() }
+
+    /** Satu penulisan cadangan pada satu waktu (penulisan file tidak bisa dibatalkan di tengah jalan). */
+    private val backupMutex = kotlinx.coroutines.sync.Mutex()
+
+    private suspend fun backupNowLocked(): Result<String> = try {
+        if (attendanceDao.count() == 0) {
+            Result.failure<String>(IllegalStateException("Belum ada catatan presensi, cadangan dibuat setelah ada catatan pertama"))
+        } else {
+            val json = BackupCodec.encode(buildBackup())
+            val result = localBackup.write(json, LocalDate.now())
+            result.getOrNull()?.let { settingsStore.setLastBackup(System.currentTimeMillis(), it) }
+            result
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure<String>(e)
+    }
+
+    /** Jadwalkan cadangan 3 detik lagi; panggilan beruntun digabung jadi satu. */
+    @Synchronized
+    fun backupSoon() {
+        backupJob?.cancel()
+        backupJob = backupScope.launch {
+            delay(3_000)
+            backupNow()
+        }
+    }
+
+    data class RestoreResult(
+        val imported: Int,
+        val duplicates: Int,
+        val employeesAdded: Int,
+        val holidays: Int,
+        val tooOld: Int,
+        val settingsApplied: Boolean,
+        val unmatched: Int = 0,
+    )
+
+    /**
+     * Pulihkan dari teks file cadangan. Catatan yang sudah ada TIDAK pernah dihapus/ditimpa: catatan cadangan
+     * dimasukkan dengan IGNORE (karyawan + tanggal sama dilewati). Karyawan dicocokkan lewat NAMA, bukan id.
+     * Foto hanya ditautkan kalau filenya masih ada di folder foto aplikasi.
+     * @throws IllegalArgumentException jika file bukan cadangan yang sah.
+     */
+    suspend fun restoreFromBackup(text: String, applySettings: Boolean, today: LocalDate = LocalDate.now()): RestoreResult =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val data = BackupCodec.decode(text) // IllegalArgumentException diteruskan ke pemanggil
+            val result = db.withTransaction { restoreLocked(data, applySettings, today) }
+            if (applySettings) settingsStore.save(data.settings) // PIN owner tidak disentuh
+            backupSoon()
+            result
+        }
+
+    private suspend fun restoreLocked(data: com.indohpl.presensi.data.backup.BackupData, applySettings: Boolean, today: LocalDate): RestoreResult {
+
+        val employeesBefore = employeeDao.count()
+        employeeDao.insertAll(data.employees) // IGNORE: id yang sudah ada tidak diubah
+        val employeesAdded = employeeDao.count() - employeesBefore
+
+        val currentByName = employeeDao.getAll().associateBy { it.name.trim().lowercase() }
+        val backupNameById = data.employees.associate { it.id to it.name.trim().lowercase() }
+
+        val months = if (applySettings) data.settings.retentionMonths else settingsStore.current().retentionMonths
+        val cutoff = Retention.cutoffDate(today, months).toString()
+
+        var imported = 0
+        var duplicates = 0
+        var tooOld = 0
+        var unmatched = 0
+        for (r in data.attendance) {
+            val current = backupNameById[r.employeeId]?.let { currentByName[it] }
+            if (current == null) { unmatched++; continue } // nama karyawan di cadangan tidak ada di HP ini
+            if (r.date < cutoff) { tooOld++; continue }
+            val fileName = r.photoPath?.substringAfterLast('/')
+            val photo = if (!fileName.isNullOrEmpty()) File(photoRoot, "${r.date.take(7)}/$fileName") else null
+            val id = attendanceDao.insertIgnore(
+                r.copy(
+                    id = 0,
+                    employeeId = current.id,
+                    photoPath = photo?.takeIf { it.isFile }?.absolutePath,
+                ),
+            )
+            if (id == -1L) duplicates++ else imported++
+        }
+
+        var holidays = 0
+        for (h in data.holidays) {
+            if (h.date < cutoff) continue
+            holidayDao.upsert(h)
+            holidays++
+        }
+
+        return RestoreResult(imported, duplicates, employeesAdded, holidays, tooOld, applySettings, unmatched)
+    }
+
+    // ---------- Pemeriksaan (Inspector) ----------
+
+    suspend fun attendanceCount(): Int = attendanceDao.count()
+
+    /** (tanggal terlama, tanggal terbaru) catatan presensi; null jika belum ada. */
+    suspend fun dateRange(): Pair<String, String>? {
+        val oldest = attendanceDao.oldestDate() ?: return null
+        val newest = attendanceDao.newestDate() ?: return null
+        return oldest to newest
+    }
+
+    /** Hasil PRAGMA integrity_check; "ok" jika database sehat. */
+    suspend fun integrityCheck(): String = withContext(Dispatchers.IO) {
+        db.openHelper.readableDatabase.query("PRAGMA integrity_check").use { c ->
+            val rows = mutableListOf<String>()
+            while (c.moveToNext() && rows.size < 5) rows += c.getString(0)
+            if (rows.isEmpty()) "tidak ada hasil" else rows.joinToString("; ")
+        }
+    }
+
+    /** Catatan yang punya tautan foto tetapi filenya sudah tidak ada. */
+    suspend fun missingPhotoRecords(): List<AttendanceRecord> = withContext(Dispatchers.IO) {
+        attendanceDao.getAll().filter { r ->
+            val p = r.photoPath
+            p != null && !File(p).exists()
+        }
+    }
+
+    /** Hapus tautan foto yang filenya hilang (catatan tetap ada). Mengembalikan jumlah catatan yang dirapikan. */
+    suspend fun clearMissingPhotoLinks(): Int {
+        val missing = missingPhotoRecords()
+        missing.forEach { attendanceDao.clearPhotoPath(it.id) }
+        return missing.size
+    }
+
+    /** File di folder foto yang tidak dipakai catatan mana pun. File yang baru dibuat (< 10 menit) dilewati. */
+    suspend fun orphanPhotos(): List<File> = withContext(Dispatchers.IO) {
+        if (!photoRoot.isDirectory) return@withContext emptyList()
+        val used = attendanceDao.getAll().mapNotNull { it.photoPath }.map { canonical(File(it)) }.toSet()
+        val recent = System.currentTimeMillis() - 10 * 60_000L
+        photoRoot.walkTopDown()
+            .filter { it.isFile && it.lastModified() < recent && canonical(it) !in used }
+            .toList()
+    }
+
+    private fun canonical(f: File): String = runCatching { f.canonicalPath }.getOrDefault(f.absolutePath)
+
+    /** Hapus foto yatim. Mengembalikan (jumlah file, byte yang dibebaskan). */
+    suspend fun deleteOrphanPhotos(): Pair<Int, Long> = withContext(Dispatchers.IO) {
+        var count = 0
+        var bytes = 0L
+        for (f in orphanPhotos()) {
+            val size = f.length()
+            if (runCatching { f.delete() }.getOrDefault(false)) {
+                count++
+                bytes += size
+            }
+        }
+        count to bytes
     }
 }

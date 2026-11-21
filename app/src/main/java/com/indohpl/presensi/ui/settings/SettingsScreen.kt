@@ -179,11 +179,19 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            InspectorSection(repository, onMessage)
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
             ExportPanel(repository, onMessage)
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
             ImportSection(repository, onMessage)
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+            BackupSection(repository, onMessage)
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 

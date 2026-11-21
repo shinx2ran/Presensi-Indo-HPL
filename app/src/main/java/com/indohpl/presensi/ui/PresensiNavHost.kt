@@ -84,6 +84,17 @@ fun PresensiNavHost(repository: Repository) {
             }
         },
     ) { padding ->
+        StartupCheck(
+            repository = repository,
+            onOpenSettings = {
+                navController.navigate(Routes.SETTINGS) {
+                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            },
+            onMessage = ::toast,
+        )
         NavHost(
             navController = navController,
             startDestination = Routes.HOME,

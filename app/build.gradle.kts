@@ -111,4 +111,5 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx) // pembersihan data lama terjadwal
 
     testImplementation(libs.junit)
+    testImplementation(libs.org.json) // org.json asli untuk tes JVM (stub android.jar tidak bisa dipakai)
 }

@@ -103,6 +103,18 @@ Pengecekan berjalan saat aplikasi dibuka dan sekali sehari di latar (WorkManager
 
 Pengaman: hapus **otomatis** ditunda bila absen terakhir lebih dari 35 hari lalu (misalnya jam HP melompat maju atau HP lama tidak dipakai). Pembersihan manual tetap bisa.
 
+## Pembaruan, cadangan, dan pasang ulang
+
+| Situasi | Yang terjadi pada data |
+|---|---|
+| **Perbarui** (pasang APK baru menimpa, versi 2.0.24 ke atas) | Otomatis berlanjut. Android menyimpan data aplikasi karena kuncinya sama. Saat dibuka muncul "Pembaruan berhasil · N catatan dilanjutkan". |
+| **Uninstall lalu pasang lagi**, HP direset, atau HP baru | Aplikasi baru menawarkan **Pulihkan dari cadangan**. Pilih file terbaru di `Download/PresensiIndoHPL`. Presensi, karyawan, dan pengaturan kembali; foto tidak ikut. |
+| Cadangan Google HP aktif | Android juga bisa memulihkan database dan pengaturan otomatis saat dipasang ulang (foto tidak ikut, maksimal 25 MB). |
+
+Cadangan otomatis: file `presensi-cadangan-YYYY-MM-DD.json` di `Download/PresensiIndoHPL`, diperbarui beberapa detik setelah tiap absen, izin/sakit, hapus, impor, pemulihan, dan setiap hari. Disimpan 14 file terakhir. File hari ini yang lebih besar (mis. dari sebelum pasang ulang) tidak ditimpa; tulisan baru masuk ke `...-baru.json`. Android 9 ke bawah meminta izin penyimpanan sekali.
+
+**Pemeriksaan aplikasi (Inspector & Fixer)** di Pengaturan (owner): versi & kunci, database (integrity check), karyawan, pengaturan, izin HP, jam HP, foto selfie, pembersihan otomatis, cadangan, ruang HP. Tombol **Perbaiki** untuk: mengembalikan karyawan, merapikan tautan foto, menghapus foto yatim, menjalankan pembersihan (dengan pengaman), mencadangkan sekarang, membuka izin/jam HP, dan mengunduh versi terbaru (lewat browser; aplikasi tetap tanpa izin internet).
+
 ## Rekap & ekspor ke Claude
 
 Tab **Saldo** menampilkan per karyawan: saldo uang rajin, hari menambah, tepat, telat, izin, sakit, alpa, dan riwayat harian.
