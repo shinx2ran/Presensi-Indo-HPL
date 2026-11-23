@@ -40,6 +40,7 @@ data class EmployeeRecap(
     val sakit: Int,
     val alpa: Int,                 // hari kerja sebelum hari ini tanpa catatan apa pun (bolos)
     val outsideLocation: Int,      // hadir tapi selfie di luar radius toko / GPS tidak ada
+    val annulled: Int,             // telat yang dianulir owner (sudah dihitung sebagai tepat waktu)
     val totalLateMinutes: Int,
     /** Tambahan "rata-rata" per hari tepat waktu, untuk ditampilkan (mis. 8.333). */
     val perDayAmount: Long,
@@ -235,6 +236,7 @@ object BonusCalculator {
                 izin = recs.count { it.status == Status.IZIN },
                 sakit = recs.count { it.status == Status.SAKIT },
                 alpa = alpaDates.size,
+                annulled = recs.count { it.annulledLateMinutes != null },
                 outsideLocation = recs.count { (it.status == Status.TEPAT || it.status == Status.TELAT) && !it.inLocation },
                 totalLateMinutes = recs.sumOf { it.lateMinutes },
                 perDayAmount = perDay,

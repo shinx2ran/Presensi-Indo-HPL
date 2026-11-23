@@ -11,12 +11,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,10 +40,8 @@ import com.indohpl.presensi.data.Repository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private const val PIN_MIN = 4
-private const val PIN_MAX = 8
-private const val MAX_ATTEMPTS = 5
-private const val LOCK_MS = 30_000L
+internal const val PIN_MIN = 4
+internal const val PIN_MAX = 8
 
 /**
  * Gerbang PIN owner. Isi [content] hanya tampil setelah PIN benar.
@@ -52,6 +52,7 @@ private const val LOCK_MS = 30_000L
 fun OwnerGate(repository: Repository, content: @Composable () -> Unit) {
     val hasPin by repository.settingsStore.hasOwnerPin.collectAsStateWithLifecycle(null)
     var unlocked by remember { mutableStateOf(false) }
+    var failedWarning by remember { mutableIntStateOf(0) }
 
     when {
         unlocked -> content()
@@ -59,9 +60,22 @@ fun OwnerGate(repository: Repository, content: @Composable () -> Unit) {
             CircularProgressIndicator()
         }
         hasPin == false -> CreatePinScreen(repository) { unlocked = true }
-        else -> EnterPinScreen(repository) { unlocked = true }
+        else -> EnterPinScreen(repository) { failedBefore -> failedWarning = failedBefore; unlocked = true }
+    }
+
+    if (failedWarning > 0) {
+        AlertDialog(
+            onDismissRequest = { failedWarning = 0 },
+            title = { Text("Ada yang mencoba PIN") },
+            text = { Text(pinFailedWarningText(failedWarning)) },
+            confirmButton = { TextButton(onClick = { failedWarning = 0 }) { Text("Mengerti") } },
+        )
     }
 }
+
+/** Kalimat peringatan untuk owner setelah berhasil masuk, bila sebelumnya ada PIN salah. */
+internal fun pinFailedWarningText(failedBefore: Int): String =
+    "Sebelum Anda masuk, ada $failedBefore kali PIN salah. Kalau itu bukan Anda, ganti PIN di bagian bawah Pengaturan."
 
 @Composable
 private fun CreatePinScreen(repository: Repository, onDone: () -> Unit) {
@@ -95,38 +109,22 @@ private fun CreatePinScreen(repository: Repository, onDone: () -> Unit) {
 }
 
 @Composable
-private fun EnterPinScreen(repository: Repository, onUnlocked: () -> Unit) {
+private fun EnterPinScreen(repository: Repository, onUnlocked: (failedBefore: Int) -> Unit) {
     val scope = rememberCoroutineScope()
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
-    var attempts by remember { mutableIntStateOf(0) }
-    var lockedUntil by remember { mutableLongStateOf(0L) }
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    val locked = now < lockedUntil
-
-    LaunchedEffect(lockedUntil) {
-        while (System.currentTimeMillis() < lockedUntil) {
-            now = System.currentTimeMillis()
-            delay(500)
-        }
-        now = System.currentTimeMillis()
-    }
+    val lock = rememberPinLock(repository)
+    val locked = lock.isLocked
 
     fun submit() {
         if (locked) return
         scope.launch {
-            if (repository.settingsStore.verifyOwnerPin(pin)) {
-                onUnlocked()
-            } else {
-                pin = ""
-                attempts++
-                if (attempts >= MAX_ATTEMPTS) {
-                    attempts = 0
-                    lockedUntil = System.currentTimeMillis() + LOCK_MS
-                    error = "Terlalu banyak percobaan."
-                } else {
-                    error = "PIN salah (${MAX_ATTEMPTS - attempts} percobaan lagi)"
-                }
+            val r = repository.settingsStore.checkOwnerPin(pin)
+            pin = ""
+            when {
+                r.ok -> onUnlocked(r.failedBefore)
+                r.lockedUntil > 0L -> { lock.lockUntil(r.lockedUntil); error = "Terlalu banyak percobaan." }
+                else -> error = "PIN salah (${r.attemptsLeft} percobaan lagi)"
             }
         }
     }
@@ -134,12 +132,41 @@ private fun EnterPinScreen(repository: Repository, onUnlocked: () -> Unit) {
     PinLayout(
         title = "Khusus owner",
         subtitle = "Masukkan PIN owner untuk membuka Pengaturan.",
-        error = if (locked) "Terkunci ${((lockedUntil - now) / 1000) + 1} detik." else error,
+        error = if (locked) lock.label() else error,
     ) {
         PinField(pin, { pin = it }, "PIN owner", enabled = !locked, onDone = { submit() })
         Spacer(Modifier.height(16.dp))
         Button(onClick = { submit() }, enabled = !locked && pin.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("Buka") }
     }
+}
+
+/** Status kunci PIN yang dibaca dari penyimpanan saat layar/dialog dibuka, lengkap dengan hitung mundur. */
+internal class PinLockState {
+    var lockedUntil by mutableLongStateOf(0L)
+    var now by mutableLongStateOf(System.currentTimeMillis())
+    val isLocked: Boolean get() = now < lockedUntil
+    fun lockUntil(until: Long) {
+        now = System.currentTimeMillis()
+        lockedUntil = until
+    }
+    fun label(): String {
+        val s = ((lockedUntil - now) / 1000) + 1
+        return if (s >= 60) "Terkunci ${s / 60} menit ${s % 60} detik." else "Terkunci $s detik."
+    }
+}
+
+@Composable
+internal fun rememberPinLock(repository: Repository): PinLockState {
+    val state = remember { PinLockState() }
+    LaunchedEffect(Unit) { state.lockUntil(repository.settingsStore.ownerPinLockedUntil()) }
+    LaunchedEffect(state.lockedUntil) {
+        while (System.currentTimeMillis() < state.lockedUntil) {
+            state.now = System.currentTimeMillis()
+            delay(500)
+        }
+        state.now = System.currentTimeMillis()
+    }
+    return state
 }
 
 @Composable
@@ -164,7 +191,7 @@ private fun PinLayout(title: String, subtitle: String, error: String?, content: 
 }
 
 @Composable
-private fun PinField(
+internal fun PinField(
     value: String,
     onChange: (String) -> Unit,
     label: String,

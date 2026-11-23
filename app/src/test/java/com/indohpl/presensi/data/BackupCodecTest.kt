@@ -88,6 +88,22 @@ class BackupCodecTest {
     }
 
     @Test
+    fun annulTrailSurvivesBackupAndOldBackupsHaveNone() {
+        val annulled = full.copy(annulledLateMinutes = 12, annulReason = "Pintu \"belum\" dibuka")
+        val back = BackupCodec.decode(BackupCodec.encode(sample(AppSettings()).copy(attendance = listOf(annulled, excused))))
+        assertEquals(12, back.attendance[0].annulledLateMinutes)
+        assertEquals("Pintu \"belum\" dibuka", back.attendance[0].annulReason)
+        assertNull(back.attendance[1].annulledLateMinutes)
+        assertEquals("", back.attendance[1].annulReason)
+
+        val old = BackupCodec.decode(
+            """{"format":"${BackupCodec.FORMAT}","version":1,"attendance":[{"employeeId":2,"date":"2026-11-05","status":"TEPAT"}]}""",
+        ).attendance.single()
+        assertNull(old.annulledLateMinutes)
+        assertEquals("", old.annulReason)
+    }
+
+    @Test
     fun nullablesStayNullAndStoreLocationCanBeNull() {
         val src = sample(AppSettings(storeLat = null, storeLon = null))
         val text = BackupCodec.encode(src)

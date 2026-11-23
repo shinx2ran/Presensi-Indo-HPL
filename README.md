@@ -86,9 +86,23 @@ Yang sengaja tidak dipakai: peringkat, warna merah, kata "dipotong", hadiah acak
 |---|---|---|
 | Beranda | kasir | absen, tandai izin/sakit, lihat foto, hapus salah tekan |
 | Saldo | kasir & karyawan & owner | **hanya melihat** saldo uang rajin per bulan, tidak ada tombol ubah/ekspor |
-| Pengaturan | **owner, dikunci PIN** | aturan jam, uang rajin, lokasi toko, hari libur, ekspor rekap, ganti PIN |
+| Pengaturan | **owner, dikunci PIN** | anulir telat, aturan jam, uang rajin, lokasi toko, hari libur, ekspor rekap, ganti PIN |
 
-PIN owner (4–8 angka) dibuat saat tab Pengaturan pertama kali dibuka. Disimpan sebagai hash (tidak bisa dibaca dari file). Salah 5 kali = terkunci 30 detik. Pindah tab = terkunci lagi. PIN yang lupa hanya bisa direset dengan menghapus data aplikasi.
+PIN owner (4–8 angka) dibuat saat tab Pengaturan pertama kali dibuka. Disimpan sebagai hash (tidak bisa dibaca dari file). Hitungan PIN salah disimpan permanen (tidak reset saat pindah tab, menutup dialog, atau menutup aplikasi): tiap 5 kali salah terkunci 30 detik, lalu 1, 2, 4, 8, dan paling lama 15 menit. Setelah owner berhasil masuk, aplikasi memberi tahu bila sebelumnya ada PIN salah. Pindah tab = terkunci lagi. PIN yang lupa hanya bisa direset dengan menghapus data aplikasi.
+
+## Anulir telat (khusus owner)
+
+Untuk hari ketika karyawan sebenarnya datang tepat waktu tetapi belum bisa absen, misalnya HP kasir di dalam toko dan pintu belum dibuka.
+
+| Dari mana | Cara |
+|---|---|
+| Beranda (hari ini) | ⋮ di kartu karyawan → **Anulir telat (owner)** → PIN owner → pilih alasan → **Anulir** |
+| Pengaturan → Anulir telat | daftar telat bulan ini dan bulan lalu, tombol **Anulir** / **Batalkan** |
+
+* Catatan telat berubah menjadi tepat waktu, jadi saldo bertambah seperti hari tepat waktu biasa (contoh: 350.000 ÷ 30 hari ≈ **+Rp 11.667**). Dialog menampilkan jumlahnya sebelum disimpan.
+* Jejak tetap tersimpan: jam absen asli, menit telat asli, dan alasan. Terlihat di Beranda ("dianulir"), tab Saldo ("dianulir owner"), dan ekspor (kolom `telat_dianulir_menit`, `alasan_anulir`).
+* **Batalkan anulir** mengembalikan catatan menjadi telat dengan menit aslinya.
+* Hari libur atau di luar hari kerja tidak menambah saldo, dianulir atau tidak.
 
 ## Pembersihan otomatis (self-regulating)
 
@@ -124,7 +138,7 @@ Ekspor ada di **Pengaturan (owner) → Ekspor rekap bulanan**. Tombol **Bagikan 
 
 | File | Isi |
 |---|---|
-| `presensi_YYYY-MM_detail.csv` | satu baris per presensi: tanggal, nama, status, jam masuk, menit telat, catatan, nama file foto, latitude, longitude, akurasi, jarak ke toko, di lokasi (YA/TIDAK) |
+| `presensi_YYYY-MM_detail.csv` | satu baris per presensi: tanggal, nama, status, jam masuk, menit telat, catatan, nama file foto, latitude, longitude, akurasi, jarak ke toko, di lokasi (YA/TIDAK), menit telat yang dianulir owner dan alasannya |
 | `presensi_YYYY-MM_rekap.csv` | ringkasan per karyawan termasuk uang rajin |
 | `presensi_YYYY-MM_rekap.md` | tabel Markdown lengkap, siap tempel ke Claude |
 

@@ -63,6 +63,8 @@ object BackupCodec {
             o.put("distanceMeters", r.distanceMeters ?: JSONObject.NULL)
             o.put("inLocation", r.inLocation)
             o.put("locationNote", r.locationNote)
+            o.put("annulledLateMinutes", r.annulledLateMinutes ?: JSONObject.NULL)
+            o.put("annulReason", r.annulReason)
             attendance.put(o)
         }
         root.put("attendance", attendance)
@@ -133,6 +135,9 @@ object BackupCodec {
                         distanceMeters = if (o.isNull("distanceMeters")) null else o.getInt("distanceMeters"),
                         inLocation = bool(o, "inLocation", false),
                         locationNote = str(o, "locationNote", ""),
+                        // Opsional: cadangan versi lama belum punya kolom anulir.
+                        annulledLateMinutes = if (o.isNull("annulledLateMinutes")) null else o.getInt("annulledLateMinutes"),
+                        annulReason = str(o, "annulReason", ""),
                     )
                 }
             }

@@ -46,6 +46,16 @@ interface AttendanceDao {
     @Query("SELECT * FROM attendance WHERE employeeId = :employeeId AND date = :date LIMIT 1")
     suspend fun find(employeeId: Long, date: String): AttendanceRecord?
 
+    @Query("SELECT * FROM attendance WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): AttendanceRecord?
+
+    @Update
+    suspend fun update(record: AttendanceRecord)
+
+    /** Catatan telat dan yang sudah dianulir dalam rentang tanggal (untuk daftar "Anulir telat" owner). */
+    @Query("SELECT * FROM attendance WHERE (status = 'TELAT' OR annulledLateMinutes IS NOT NULL) AND date BETWEEN :from AND :to ORDER BY date DESC, timestamp")
+    fun observeLateOrAnnulled(from: String, to: String): Flow<List<AttendanceRecord>>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(record: AttendanceRecord): Long
 

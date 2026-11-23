@@ -19,6 +19,8 @@ data class ImportRow(
     val distanceMeters: Int?,
     val inLocation: Boolean,
     val locationNote: String,
+    val annulledLateMinutes: Int? = null,   // kolom telat_dianulir_menit (ekspor versi anulir)
+    val annulReason: String = "",
 )
 
 data class ParseResult(val rows: List<ImportRow>, val errors: List<String>)
@@ -51,6 +53,8 @@ object CsvImport {
         val iDist = header.indexOfFirst { it.startsWith("jarak_") && it.endsWith("_m") }
         val iInLoc = col("di_lokasi")
         val iLocNote = col("ket_lokasi")
+        val iAnnulled = col("telat_dianulir_menit")
+        val iAnnulReason = col("alasan_anulir")
 
         val rows = mutableListOf<ImportRow>()
         val errors = mutableListOf<String>()
@@ -84,6 +88,9 @@ object CsvImport {
                         distanceMeters = cell(iDist).toIntOrNull(),
                         inLocation = cell(iInLoc).equals("YA", ignoreCase = true),
                         locationNote = cell(iLocNote),
+                        // Anulir hanya berlaku untuk catatan TEPAT (hasil anulir telat).
+                        annulledLateMinutes = if (status == Status.TEPAT) cell(iAnnulled).toIntOrNull()?.coerceAtLeast(0) else null,
+                        annulReason = if (status == Status.TEPAT && cell(iAnnulled).toIntOrNull() != null) cell(iAnnulReason) else "",
                     )
                 }
             }

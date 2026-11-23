@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.indohpl.presensi.domain.BonusConfig
+import com.indohpl.presensi.domain.PinLockout
 import java.time.DayOfWeek
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -72,6 +73,8 @@ class SettingsStore(private val context: Context) {
         val RETENTION = intPreferencesKey("retention_months")
         val PIN_HASH = stringPreferencesKey("owner_pin_hash")
         val PIN_SALT = stringPreferencesKey("owner_pin_salt")
+        val PIN_FAILS = intPreferencesKey("owner_pin_fails")
+        val PIN_LOCKED_UNTIL = longPreferencesKey("owner_pin_locked_until")
         val LAST_SEEN_VERSION = longPreferencesKey("last_seen_version_code")
         val LAST_BACKUP_AT = longPreferencesKey("last_backup_at")
         val LAST_BACKUP_FILE = stringPreferencesKey("last_backup_file")
@@ -136,11 +139,56 @@ class SettingsStore(private val context: Context) {
         }
     }
 
-    suspend fun verifyOwnerPin(pin: String): Boolean {
-        val p = context.dataStore.data.first()
-        val salt = p[Keys.PIN_SALT] ?: return false
-        val hash = p[Keys.PIN_HASH] ?: return false
-        return hashPin(salt, pin) == hash
+    /**
+     * Hasil cek PIN owner.
+     * [lockedUntil] > 0: sedang terkunci sampai waktu itu (epoch millis), PIN tidak diperiksa.
+     * [failedBefore]: jumlah PIN salah sebelum berhasil kali ini, supaya owner tahu bila ada yang mencoba-coba.
+     */
+    data class PinCheck(
+        val ok: Boolean,
+        val lockedUntil: Long = 0L,
+        val attemptsLeft: Int = PinLockout.ATTEMPTS_PER_ROUND,
+        val failedBefore: Int = 0,
+    )
+
+    /** Batas kunci PIN yang sedang berlaku (0 = tidak terkunci). Untuk menampilkan hitung mundur saat layar dibuka. */
+    suspend fun ownerPinLockedUntil(now: Long = System.currentTimeMillis()): Long {
+        val until = PinLockout.effectiveLockedUntil(context.dataStore.data.first()[Keys.PIN_LOCKED_UNTIL] ?: 0L, now)
+        return if (now < until) until else 0L
+    }
+
+    /**
+     * Cek PIN owner dengan kunci permanen: hitungan salah tersimpan di DataStore, jadi tidak reset saat dialog
+     * ditutup, pindah tab, atau aplikasi ditutup. Dipakai gerbang Pengaturan dan dialog PIN anulir.
+     */
+    suspend fun checkOwnerPin(pin: String, now: Long = System.currentTimeMillis()): PinCheck {
+        var result = PinCheck(ok = false)
+        context.dataStore.edit { p ->
+            val fails = p[Keys.PIN_FAILS] ?: 0
+            val lockedUntil = PinLockout.effectiveLockedUntil(p[Keys.PIN_LOCKED_UNTIL] ?: 0L, now)
+            if (now < lockedUntil) {
+                result = PinCheck(ok = false, lockedUntil = lockedUntil, attemptsLeft = 0)
+                return@edit
+            }
+            val salt = p[Keys.PIN_SALT]
+            val hash = p[Keys.PIN_HASH]
+            if (salt != null && hash != null && hashPin(salt, pin) == hash) {
+                p[Keys.PIN_FAILS] = 0
+                p.remove(Keys.PIN_LOCKED_UNTIL)
+                result = PinCheck(ok = true, failedBefore = fails)
+            } else {
+                val n = fails + 1
+                p[Keys.PIN_FAILS] = n
+                val lockMs = PinLockout.lockMsAfter(n)
+                if (lockMs > 0) {
+                    p[Keys.PIN_LOCKED_UNTIL] = now + lockMs
+                    result = PinCheck(ok = false, lockedUntil = now + lockMs, attemptsLeft = 0)
+                } else {
+                    result = PinCheck(ok = false, attemptsLeft = PinLockout.attemptsLeft(n))
+                }
+            }
+        }
+        return result
     }
 
     private fun hashPin(salt: String, pin: String): String =

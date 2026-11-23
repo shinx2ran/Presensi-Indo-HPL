@@ -47,7 +47,13 @@ data class AttendanceRecord(
     val distanceMeters: Int? = null,      // jarak ke titik toko, null jika titik toko belum diatur
     @ColumnInfo(defaultValue = "0") val inLocation: Boolean = false, // true = dalam radius toko
     @ColumnInfo(defaultValue = "") val locationNote: String = "",    // mis. "GPS tidak didapat", "lokasi palsu"
+    // --- Anulir telat oleh owner (mis. pintu toko belum dibuka sehingga HP belum bisa dipakai) ---
+    val annulledLateMinutes: Int? = null,                            // menit telat ASLI bila dianulir; null = tidak dianulir
+    @ColumnInfo(defaultValue = "") val annulReason: String = "",     // alasan anulir, mis. "Pintu toko belum dibuka"
 )
+
+/** true bila telat dianulir owner (status sudah TEPAT, menit telat asli disimpan). Ekstensi agar Room tidak melihatnya. */
+val AttendanceRecord.isAnnulled: Boolean get() = annulledLateMinutes != null
 
 /** Tanggal libur (toko tutup) — tidak dihitung sebagai hari kerja. */
 @Entity(tableName = "holidays")

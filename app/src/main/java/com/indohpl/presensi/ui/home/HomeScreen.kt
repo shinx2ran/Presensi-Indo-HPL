@@ -47,6 +47,7 @@ import com.indohpl.presensi.data.AttendanceRecord
 import com.indohpl.presensi.data.Employee
 import com.indohpl.presensi.data.Repository
 import com.indohpl.presensi.data.Status
+import com.indohpl.presensi.domain.AnnulRule
 import com.indohpl.presensi.domain.BonusCalculator
 import com.indohpl.presensi.domain.EmployeeRecap
 import com.indohpl.presensi.domain.LateRule
@@ -57,6 +58,10 @@ import com.indohpl.presensi.ui.PlusChip
 import com.indohpl.presensi.ui.StatusPill
 import com.indohpl.presensi.ui.StreakChip
 import com.indohpl.presensi.ui.longLabel
+import com.indohpl.presensi.ui.settings.AnnulLateDialog
+import com.indohpl.presensi.ui.settings.OwnerPinDialog
+import com.indohpl.presensi.ui.settings.UndoAnnulDialog
+import com.indohpl.presensi.ui.settings.pinFailedWarningText
 import com.indohpl.presensi.ui.theme.Green
 import java.time.Duration
 import java.time.LocalDate
@@ -69,6 +74,14 @@ import kotlinx.coroutines.launch
 
 private val CLOCK: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
 private val HHMM: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+
+/** Alur anulir dari menu kartu: PIN owner dulu ([verified] = false), lalu dialog anulir/batalkan. */
+private data class AnnulFlow(
+    val employee: Employee,
+    val record: AttendanceRecord,
+    val undo: Boolean,
+    val verified: Boolean = false,
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -129,6 +142,7 @@ fun HomeScreen(
     var photoToShow by remember { mutableStateOf<Pair<String, String>?>(null) }
     var excuseDialog by remember { mutableStateOf<Pair<Employee, String>?>(null) }
     var deleteDialog by remember { mutableStateOf<Pair<Employee, AttendanceRecord>?>(null) }
+    var annulFlow by remember { mutableStateOf<AnnulFlow?>(null) }
 
     Scaffold(
         topBar = {
@@ -180,6 +194,8 @@ fun HomeScreen(
                     onShowPhoto = { path -> photoToShow = path to "${emp.name} · ${recordByEmployee[emp.id]?.timeIn ?: ""}" },
                     onExcuse = { status -> excuseDialog = emp to status },
                     onDelete = { rec -> deleteDialog = emp to rec },
+                    onAnnul = { rec -> annulFlow = AnnulFlow(emp, rec, undo = false) },
+                    onUndoAnnul = { rec -> annulFlow = AnnulFlow(emp, rec, undo = true) },
                 )
             }
             item { Spacer(Modifier.height(24.dp)) }
@@ -237,6 +253,44 @@ fun HomeScreen(
             dismissButton = { TextButton(onClick = { deleteDialog = null }) { Text("Batal") } },
         )
     }
+
+    annulFlow?.let { flow ->
+        val emp = flow.employee
+        // Pakai catatan terbaru bila ada; jatuh kembali ke yang tersimpan saat menu dibuka.
+        val rec = recordByEmployee[emp.id] ?: flow.record
+        if (!flow.verified) {
+            OwnerPinDialog(
+                repository = repository,
+                title = "Khusus owner",
+                message = if (flow.undo) {
+                    "Batalkan anulir ${emp.name} hari ini. Masukkan PIN owner."
+                } else {
+                    "Anulir telat ${emp.name} hari ini (${rec.timeIn.take(5)}, telat ${rec.lateMinutes} menit). Masukkan PIN owner."
+                },
+                onDismiss = { annulFlow = null },
+                onVerified = { failedBefore ->
+                    if (failedBefore > 0) onMessage(pinFailedWarningText(failedBefore))
+                    annulFlow = flow.copy(verified = true)
+                },
+            )
+        } else if (flow.undo) {
+            UndoAnnulDialog(
+                repository = repository,
+                employeeName = emp.name,
+                record = rec,
+                onDismiss = { annulFlow = null },
+                onDone = { msg -> annulFlow = null; onMessage(msg) },
+            )
+        } else {
+            AnnulLateDialog(
+                repository = repository,
+                employeeName = emp.name,
+                record = rec,
+                onDismiss = { annulFlow = null },
+                onDone = { msg -> annulFlow = null; onMessage(msg) },
+            )
+        }
+    }
 }
 
 @Composable
@@ -275,6 +329,8 @@ private fun EmployeeCard(
     onShowPhoto: (String) -> Unit,
     onExcuse: (String) -> Unit,
     onDelete: (AttendanceRecord) -> Unit,
+    onAnnul: (AttendanceRecord) -> Unit,
+    onUndoAnnul: (AttendanceRecord) -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Card(elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) {
@@ -320,7 +376,7 @@ private fun EmployeeCard(
                         StatusPill(
                             status = record.status,
                             text = when (record.status) {
-                                Status.TEPAT -> "Tepat · ${record.timeIn.take(5)}"
+                                Status.TEPAT -> if (record.annulledLateMinutes != null) "Tepat · ${record.timeIn.take(5)} · dianulir" else "Tepat · ${record.timeIn.take(5)}"
                                 Status.TELAT -> "Telat ${record.lateMinutes} mnt · ${record.timeIn.take(5)}"
                                 Status.IZIN -> "Izin"
                                 Status.SAKIT -> "Sakit"
@@ -331,6 +387,14 @@ private fun EmployeeCard(
                             Spacer(Modifier.width(6.dp))
                             StatusPill(status = Status.TELAT, text = "Luar lokasi")
                         }
+                    }
+                    if (record.status == Status.TEPAT && record.annulledLateMinutes != null) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            if (record.annulReason.isNotBlank()) "Dianulir owner: ${record.annulReason}" else "Dianulir owner",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                     if (recap != null) {
                         val credit = recap.dailyCredits[today.toString()] ?: 0L
@@ -376,6 +440,12 @@ private fun EmployeeCard(
                     DropdownMenuItem(text = { Text("Tandai sakit") }, onClick = { menuOpen = false; onExcuse(Status.SAKIT) })
                 } else {
                     DropdownMenuItem(text = { Text("Hapus catatan hari ini") }, onClick = { menuOpen = false; onDelete(record) })
+                    if (AnnulRule.canAnnul(record)) {
+                        DropdownMenuItem(text = { Text("Anulir telat (owner)") }, onClick = { menuOpen = false; onAnnul(record) })
+                    }
+                    if (AnnulRule.canUndo(record)) {
+                        DropdownMenuItem(text = { Text("Batalkan anulir (owner)") }, onClick = { menuOpen = false; onUndoAnnul(record) })
+                    }
                 }
             }
         }

@@ -6,6 +6,7 @@ import androidx.room.withTransaction
 import com.indohpl.presensi.data.backup.BackupCodec
 import com.indohpl.presensi.data.backup.BackupData
 import com.indohpl.presensi.data.backup.LocalBackup
+import com.indohpl.presensi.domain.AnnulRule
 import com.indohpl.presensi.domain.CsvImport
 import com.indohpl.presensi.domain.GeoCheck
 import com.indohpl.presensi.domain.Retention
@@ -145,6 +146,51 @@ class Repository(context: Context) {
         return true
     }
 
+    /**
+     * Owner menganulir telat (mis. karyawan sudah datang tepat waktu tetapi pintu toko belum dibuka).
+     * Catatan menjadi TEPAT sehingga saldo bertambah seperti biasa; menit telat asli dan alasannya disimpan
+     * sebagai jejak (lihat [AnnulRule]). Mengembalikan catatan baru, atau null bila bukan catatan telat.
+     */
+    suspend fun annulLate(recordId: Long, reason: String): AttendanceRecord? {
+        val r = attendanceDao.getById(recordId) ?: return null
+        val updated = AnnulRule.annul(r, reason) ?: return null
+        attendanceDao.update(updated)
+        backupSoon()
+        return updated
+    }
+
+    /** Membatalkan anulir: kembali TELAT dengan menit telat asli. Mengembalikan catatan baru, atau null bila tidak dianulir. */
+    suspend fun undoAnnul(recordId: Long): AttendanceRecord? {
+        val r = attendanceDao.getById(recordId) ?: return null
+        val updated = AnnulRule.undo(r) ?: return null
+        attendanceDao.update(updated)
+        backupSoon()
+        return updated
+    }
+
+    /**
+     * Berapa saldo karyawan berubah bila catatan ini dianulir (positif) atau anulirnya dibatalkan (negatif).
+     * Untuk ditampilkan di dialog konfirmasi owner sebelum menyimpan. 0 bila tidak berpengaruh (mis. hari libur).
+     */
+    suspend fun annulSaldoChange(record: AttendanceRecord, today: LocalDate = LocalDate.now()): Long {
+        val after = AnnulRule.annul(record, AnnulRule.DEFAULT_REASON) ?: AnnulRule.undo(record) ?: return 0
+        val employee = employeeDao.getAll().firstOrNull { it.id == record.employeeId } ?: return 0
+        val s = settingsStore.current()
+        return AnnulRule.saldoChange(
+            employee = employee,
+            monthRecords = getMonth(YearMonth.from(LocalDate.parse(record.date))),
+            before = record,
+            after = after,
+            today = today,
+            workDayOfWeeks = s.workDays,
+            holidays = holidayDao.getAll().mapNotNull { runCatching { LocalDate.parse(it.date) }.getOrNull() }.toSet(),
+            config = s.bonusConfig(),
+        )
+    }
+
+    fun observeLateOrAnnulled(from: LocalDate, to: LocalDate): Flow<List<AttendanceRecord>> =
+        attendanceDao.observeLateOrAnnulled(from.toString(), to.toString())
+
     suspend fun deleteRecord(record: AttendanceRecord) {
         attendanceDao.delete(record)
         record.photoPath?.let { runCatching { File(it).delete() } }
@@ -198,6 +244,8 @@ class Repository(context: Context) {
                         distanceMeters = r.distanceMeters,
                         inLocation = r.inLocation,
                         locationNote = r.locationNote,
+                        annulledLateMinutes = r.annulledLateMinutes,
+                        annulReason = r.annulReason,
                     ),
                 )
                 if (id == -1L) duplicates++ else imported++

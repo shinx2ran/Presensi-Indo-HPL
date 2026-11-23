@@ -28,7 +28,7 @@ object RecapFormatter {
     fun detailCsv(ym: YearMonth, employees: List<Employee>, records: List<AttendanceRecord>): String {
         val names = employees.associate { it.id to it.name }
         val sb = StringBuilder()
-        sb.append("tanggal,nama,status,jam_masuk,menit_telat,catatan,foto,latitude,longitude,akurasi_m,jarak_toko_m,di_lokasi,ket_lokasi\n")
+        sb.append("tanggal,nama,status,jam_masuk,menit_telat,catatan,foto,latitude,longitude,akurasi_m,jarak_toko_m,di_lokasi,ket_lokasi,telat_dianulir_menit,alasan_anulir\n")
         records.sortedWith(compareBy({ it.date }, { it.timestamp })).forEach { r ->
             sb.append(
                 listOf(
@@ -45,6 +45,8 @@ object RecapFormatter {
                     r.distanceMeters?.toString() ?: "",
                     if (r.status == Status.TEPAT || r.status == Status.TELAT) (if (r.inLocation) "YA" else "TIDAK") else "",
                     r.locationNote,
+                    r.annulledLateMinutes?.toString() ?: "",
+                    r.annulReason,
                 ).joinToString(",") { csvCell(it) },
             ).append('\n')
         }
@@ -54,13 +56,13 @@ object RecapFormatter {
     /** CSV ringkasan per karyawan. */
     fun summaryCsv(ym: YearMonth, recaps: List<EmployeeRecap>): String {
         val sb = StringBuilder()
-        sb.append("bulan,nama,hari_kerja,hadir,tepat,telat,izin,sakit,alpa,di_luar_lokasi,total_menit_telat,tambah_per_hari,hari_menambah,saldo_uang_rajin,maksimal_bulan_ini,full_bulan\n")
+        sb.append("bulan,nama,hari_kerja,hadir,tepat,telat,izin,sakit,alpa,di_luar_lokasi,total_menit_telat,tambah_per_hari,hari_menambah,saldo_uang_rajin,maksimal_bulan_ini,full_bulan,telat_dianulir\n")
         recaps.forEach { r ->
             sb.append(
                 listOf(
                     ym.toString(), r.employee.name, r.workDaysInMonth, r.hadir, r.tepat, r.telat, r.izin, r.sakit,
                     r.alpa, r.outsideLocation, r.totalLateMinutes, r.perDayAmount, r.creditedDays, r.earned, r.maxThisMonth,
-                    if (r.isFullMonth) "YA" else "TIDAK",
+                    if (r.isFullMonth) "YA" else "TIDAK", r.annulled,
                 ).joinToString(",") { csvCell(it.toString()) },
             ).append('\n')
         }
@@ -84,7 +86,12 @@ object RecapFormatter {
         sb.append("Jam masuk: $rulesText. ")
         val perDay = recaps.firstOrNull()?.perDayAmount ?: 0
         sb.append("Uang rajin bertambah ${rupiahPlus(perDay)} setiap hari tepat waktu (telat, izin, sakit, dan bolos tidak dihitung)")
-        sb.append(", maksimal ${rupiah(recaps.firstOrNull()?.maxThisMonth ?: config.monthlyBonus)} bulan ini.\n\n")
+        sb.append(", maksimal ${rupiah(recaps.firstOrNull()?.maxThisMonth ?: config.monthlyBonus)} bulan ini.\n")
+        val totalAnnulled = recaps.sumOf { it.annulled }
+        if (totalAnnulled > 0) {
+            sb.append("Telat yang dianulir owner (dihitung tepat waktu): $totalAnnulled kali, ditandai \"dianulir\" di detail harian.\n")
+        }
+        sb.append("\n")
 
         sb.append("## Ringkasan\n\n")
         sb.append("| Nama | Hari kerja | Hadir | Tepat | Telat | Izin | Sakit | Alpa | Di luar lokasi | Hari menambah | Saldo uang rajin | Maksimal |\n")
@@ -104,7 +111,8 @@ object RecapFormatter {
             val jarak = r.distanceMeters?.let { GeoRule.formatDistance(it) } ?: ""
             val koord = if (r.latitude != null && r.longitude != null) GeoRule.formatCoord(r.latitude, r.longitude) else ""
             val tambah = creditByKey[r.employeeId to r.date]?.let { rupiahPlus(it) } ?: "-"
-            sb.append("| ${r.date} | ${names[r.employeeId] ?: r.employeeId} | ${r.status} | ${r.timeIn} | ${r.lateMinutes} | $tambah | $lokasi | $jarak | $koord | ${r.note} |\n")
+            val status = if (r.annulledLateMinutes != null) "${r.status} (dianulir, telat ${r.annulledLateMinutes} mnt: ${r.annulReason})" else r.status
+            sb.append("| ${r.date} | ${names[r.employeeId] ?: r.employeeId} | $status | ${r.timeIn} | ${r.lateMinutes} | $tambah | $lokasi | $jarak | $koord | ${r.note} |\n")
         }
         return sb.toString()
     }

@@ -66,6 +66,7 @@ import com.indohpl.presensi.ui.StatusPill
 import com.indohpl.presensi.ui.StreakChip
 import com.indohpl.presensi.ui.shortLabel
 import com.indohpl.presensi.ui.statusLabel
+import com.indohpl.presensi.ui.theme.Blue
 import com.indohpl.presensi.ui.theme.Green
 import com.indohpl.presensi.ui.theme.GreenLight
 import java.time.LocalDate
@@ -362,7 +363,8 @@ private fun SaldoCard(
                     Spacer(Modifier.height(8.dp))
                     Text(
                         "Tepat ${recap.tepat} · Telat ${recap.telat} · Izin/Sakit ${recap.izin + recap.sakit} · Tidak absen ${recap.alpa}" +
-                            (if (recap.outsideLocation > 0) " · Luar lokasi ${recap.outsideLocation}" else ""),
+                            (if (recap.outsideLocation > 0) " · Luar lokasi ${recap.outsideLocation}" else "") +
+                            (if (recap.annulled > 0) " · Dianulir ${recap.annulled}" else ""),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -403,6 +405,14 @@ private fun SaldoCard(
                                     Spacer(Modifier.width(6.dp))
                                     StatusPill(status = Status.TELAT, text = "Luar lokasi")
                                 }
+                            }
+                            if (rec.annulledLateMinutes != null) {
+                                Text(
+                                    "dianulir owner",
+                                    modifier = Modifier.padding(top = 4.dp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Blue,
+                                )
                             }
                             if (rec.note.isNotBlank()) {
                                 Text(

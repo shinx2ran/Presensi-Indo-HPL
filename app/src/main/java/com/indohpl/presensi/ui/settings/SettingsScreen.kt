@@ -179,6 +179,10 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            AnnulSection(repository, onMessage)
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
             InspectorSection(repository, onMessage)
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
