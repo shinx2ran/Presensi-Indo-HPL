@@ -166,7 +166,8 @@ fun BackupSection(repository: Repository, onMessage: (String) -> Unit) {
         )
     }
 
-    pickedText?.let { text ->
+    // Disembunyikan selama lapisan PIN tampil (lihat LocalOwnerRelocked); muncul lagi setelah PIN benar.
+    pickedText?.takeIf { !LocalOwnerRelocked.current }?.let { text ->
         AlertDialog(
             onDismissRequest = { pickedText = null },
             title = { Text("Pulihkan data dari cadangan?") },

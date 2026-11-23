@@ -177,10 +177,30 @@ class PinLockoutTest {
         // Jam HP dimajukan 1 jam, jadi hanya uptime yang menahan.
         val left = p.open(Clock(10 * year + 60 * min, 400_000L))
         assertEquals(600_000L, left)                          // sudah menyala 400 dtk + sisa 600 dtk = 1000 dtk >= 900 dtk
-        // Dengan jam jujur (+2 menit), kunci jam dinding (13 menit) yang lebih lama berlaku.
+        // Jam HP tidak berpengaruh: dengan jam jujur hasilnya sama.
         val honest = Phone(State(fails = 29))
         honest.tryPin(false, Clock(10 * year, 100_000L))
-        assertEquals(13 * min, honest.open(Clock(10 * year + 2 * min, 400_000L)))
+        assertEquals(600_000L, honest.open(Clock(10 * year + 2 * min, 400_000L)))
+    }
+
+    @Test
+    fun movingClockBackCannotStretchAShortLock() {
+        // Kunci 30 dtk, lalu jam HP dimundurkan 5 menit (koreksi jam otomatis atau sengaja): tetap paling lama 30 dtk.
+        val p = Phone()
+        val t = Clock(10 * year, 100_000L)
+        repeat(5) { p.tryPin(false, t) }
+        val back = Clock(t.wallMs - 5 * min, t.elapsedMs + 1_000)
+        assertEquals(29_000L, p.open(back))
+        assertEquals("jam dimundurkan lagi 1 jam: tetap tidak bertambah", 28_000L, p.open(Clock(back.wallMs - 60 * min, t.elapsedMs + 2_000)))
+        assertTrue(p.tryPin(true, Clock(back.wallMs + 30_000L, t.elapsedMs + 30_000L)).ok)
+    }
+
+    @Test
+    fun legacyStateWithoutElapsedFallsBackToWallClockCapped() {
+        val now = Clock(10 * year, 5_000L)
+        assertEquals(20_000L, PinLockout.remainingMs(State(fails = 5, wallUntil = now.wallMs + 20_000L), now))
+        assertEquals(PinLockout.MAX_LOCK_MS, PinLockout.remainingMs(State(fails = 5, wallUntil = now.wallMs + year), now))
+        assertEquals(now.wallMs + PinLockout.MAX_LOCK_MS, PinLockout.normalize(State(fails = 5, wallUntil = now.wallMs + year), now).wallUntil)
     }
 
     @Test

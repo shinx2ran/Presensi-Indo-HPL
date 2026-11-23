@@ -89,7 +89,8 @@ fun RetentionSection(repository: Repository, onMessage: (String) -> Unit) {
         }
     }
 
-    if (confirm) {
+    // Disembunyikan selama lapisan PIN tampil (lihat LocalOwnerRelocked); muncul lagi setelah PIN benar.
+    if (confirm && !LocalOwnerRelocked.current) {
         AlertDialog(
             onDismissRequest = { confirm = false },
             title = { Text("Hapus data lama sekarang?") },

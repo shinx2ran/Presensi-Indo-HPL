@@ -35,7 +35,9 @@ import com.indohpl.presensi.ui.PlusChip
 import com.indohpl.presensi.ui.longLabel
 import com.indohpl.presensi.ui.theme.Green
 import java.time.LocalDate
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Dialog PIN owner untuk aksi khusus owner di luar tab Pengaturan (mis. anulir telat dari Beranda).
@@ -191,7 +193,7 @@ fun AnnulLateDialog(
                 onClick = {
                     saving = true
                     scope.launch {
-                        val saved = repository.annulLate(record.id, reason)
+                        val saved = withContext(NonCancellable) { repository.annulLate(record.id, reason) }
                         val c = change ?: 0L
                         onDone(
                             when {
@@ -251,7 +253,7 @@ fun UndoAnnulDialog(
                 onClick = {
                     saving = true
                     scope.launch {
-                        val saved = repository.undoAnnul(record.id)
+                        val saved = withContext(NonCancellable) { repository.undoAnnul(record.id) }
                         onDone(if (saved == null) "Catatan $employeeName sudah berubah" else "Anulir $employeeName dibatalkan")
                     }
                 },

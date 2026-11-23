@@ -20,6 +20,7 @@ class PresensiApp : Application() {
         appScope.launch {
             repository.ensureSeeded()
             runCatching { repository.settingsStore.migrateBonusTo350() }
+            runCatching { repository.settingsStore.ownerPinLockMsLeft() } // hapus kunci PIN yang sudah habis
             runCatching { repository.cleanupOldData(automatic = true) }
             repository.backupSoon()
         }

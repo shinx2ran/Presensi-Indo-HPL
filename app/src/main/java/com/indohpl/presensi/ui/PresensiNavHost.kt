@@ -18,6 +18,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -59,6 +61,11 @@ fun PresensiNavHost(repository: Repository) {
 
     fun toast(message: String) {
         scope.launch { snackbarHostState.showSnackbar(message) }
+    }
+
+    // Tiap kali aplikasi tampil lagi: hapus catatan kunci PIN yang sudah habis (supaya restart HP tidak menghidupkannya).
+    LifecycleEventEffect(Lifecycle.Event.ON_START) {
+        scope.launch { runCatching { repository.settingsStore.ownerPinLockMsLeft() } }
     }
 
     Scaffold(

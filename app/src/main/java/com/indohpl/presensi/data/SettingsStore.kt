@@ -17,9 +17,15 @@ import com.indohpl.presensi.domain.PinLockout
 import java.time.DayOfWeek
 import java.security.MessageDigest
 import java.security.SecureRandom
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
@@ -194,7 +200,27 @@ class SettingsStore(private val context: Context) {
             writeLock(p, next)
             result = r
         }
+        if (result.lockedMsLeft > 0L) clearPinLockWhenExpired(result.lockedMsLeft)
         return result
+    }
+
+    private val pinCleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var pinCleanupJob: Job? = null
+
+    /**
+     * Hapus catatan kunci begitu habis, tanpa menunggu layar PIN dibuka. Kunci yang tercatat masih aktif saat HP
+     * dinyalakan ulang akan dimulai ulang (lihat PinLockout), jadi kunci yang sudah habis jangan dibiarkan tercatat.
+     * Usaha terbaik: bila proses aplikasi mati lebih dulu, pembersihan saat aplikasi dibuka lagi yang menangani.
+     */
+    private fun clearPinLockWhenExpired(firstWaitMs: Long) {
+        pinCleanupJob?.cancel()
+        pinCleanupJob = pinCleanupScope.launch {
+            var wait = firstWaitMs
+            while (wait > 0L) {
+                delay(wait + 1_000L)
+                wait = runCatching { ownerPinLockMsLeft() }.getOrDefault(0L)
+            }
+        }
     }
 
     private fun hashPin(salt: String, pin: String): String =

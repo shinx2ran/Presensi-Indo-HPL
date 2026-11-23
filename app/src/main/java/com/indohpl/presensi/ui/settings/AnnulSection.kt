@@ -96,14 +96,16 @@ fun AnnulSection(repository: Repository, onMessage: (String) -> Unit) {
         }
     }
 
-    annulTarget?.let { r ->
+    // Disembunyikan selama lapisan PIN tampil (lihat LocalOwnerRelocked); muncul lagi setelah PIN benar.
+    val relocked = LocalOwnerRelocked.current
+    annulTarget?.takeIf { !relocked }?.let { r ->
         AnnulLateDialog(
             repository = repository, employeeName = nameOf(r), record = r,
             onDismiss = { annulTarget = null },
             onDone = { msg -> annulTarget = null; onMessage(msg) },
         )
     }
-    undoTarget?.let { r ->
+    undoTarget?.takeIf { !relocked }?.let { r ->
         UndoAnnulDialog(
             repository = repository, employeeName = nameOf(r), record = r,
             onDismiss = { undoTarget = null },
