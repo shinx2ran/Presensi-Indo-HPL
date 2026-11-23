@@ -1,6 +1,8 @@
 package com.indohpl.presensi.ui.settings
 
+import android.os.SystemClock
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,6 +19,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -35,6 +38,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.indohpl.presensi.data.Repository
 import kotlinx.coroutines.delay
@@ -42,6 +47,7 @@ import kotlinx.coroutines.launch
 
 internal const val PIN_MIN = 4
 internal const val PIN_MAX = 8
+private const val RELOCK_AFTER_MS = 60_000L
 
 /**
  * Gerbang PIN owner. Isi [content] hanya tampil setelah PIN benar.
@@ -52,10 +58,29 @@ internal const val PIN_MAX = 8
 fun OwnerGate(repository: Repository, content: @Composable () -> Unit) {
     val hasPin by repository.settingsStore.hasOwnerPin.collectAsStateWithLifecycle(null)
     var unlocked by remember { mutableStateOf(false) }
+    var relocked by remember { mutableStateOf(false) }
+    var stoppedAt by remember { mutableLongStateOf(0L) }
     var failedWarning by remember { mutableIntStateOf(0) }
 
+    // Kunci lagi bila aplikasi ditinggal (layar mati / pindah aplikasi) lebih dari RELOCK_AFTER_MS.
+    // Isi Pengaturan tetap tersusun di bawah lapisan PIN, supaya pemilih file (impor/cadangan) yang sedang
+    // berjalan tidak terputus.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { if (unlocked) stoppedAt = SystemClock.elapsedRealtime() }
+    LifecycleEventEffect(Lifecycle.Event.ON_START) {
+        if (unlocked && stoppedAt > 0L && SystemClock.elapsedRealtime() - stoppedAt >= RELOCK_AFTER_MS) relocked = true
+        stoppedAt = 0L
+    }
+
     when {
-        unlocked -> content()
+        unlocked -> Box(Modifier.fillMaxSize()) {
+            content()
+            if (relocked) {
+                // Surface menahan sentuhan agar isi di bawahnya tidak bisa disentuh.
+                Surface(Modifier.fillMaxSize()) {
+                    EnterPinScreen(repository) { failedBefore -> failedWarning = failedBefore; relocked = false }
+                }
+            }
+        }
         hasPin == null -> Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             CircularProgressIndicator()
         }
@@ -143,14 +168,17 @@ private fun EnterPinScreen(repository: Repository, onUnlocked: (failedBefore: In
     }
 }
 
-/** Status kunci PIN yang dibaca dari penyimpanan saat layar/dialog dibuka, lengkap dengan hitung mundur. */
+/**
+ * Status kunci PIN yang dibaca dari penyimpanan saat layar/dialog dibuka, lengkap dengan hitung mundur.
+ * Memakai elapsedRealtime (bukan jam HP) supaya hitung mundur tidak macet bila jam HP dikoreksi.
+ */
 internal class PinLockState {
     var lockedUntil by mutableLongStateOf(0L)
-    var now by mutableLongStateOf(System.currentTimeMillis())
+    var now by mutableLongStateOf(SystemClock.elapsedRealtime())
     val isLocked: Boolean get() = now < lockedUntil
     /** Kunci tampilan selama [ms] dari sekarang (0 = tidak terkunci). Sisa waktunya dihitung SettingsStore. */
     fun lockFor(ms: Long) {
-        now = System.currentTimeMillis()
+        now = SystemClock.elapsedRealtime()
         lockedUntil = now + ms.coerceAtLeast(0L)
     }
     fun label(): String {
@@ -164,11 +192,11 @@ internal fun rememberPinLock(repository: Repository): PinLockState {
     val state = remember { PinLockState() }
     LaunchedEffect(Unit) { state.lockFor(repository.settingsStore.ownerPinLockMsLeft()) }
     LaunchedEffect(state.lockedUntil) {
-        while (System.currentTimeMillis() < state.lockedUntil) {
-            state.now = System.currentTimeMillis()
+        while (SystemClock.elapsedRealtime() < state.lockedUntil) {
+            state.now = SystemClock.elapsedRealtime()
             delay(500)
         }
-        state.now = System.currentTimeMillis()
+        state.now = SystemClock.elapsedRealtime()
     }
     return state
 }

@@ -41,6 +41,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.indohpl.presensi.data.AppSettings
 import com.indohpl.presensi.data.AttendanceRecord
@@ -81,6 +83,7 @@ private data class AnnulFlow(
     val record: AttendanceRecord,
     val undo: Boolean,
     val verified: Boolean = false,
+    val failedWarning: Int = 0,   // PIN salah sebelum owner berhasil; ditampilkan sebagai dialog sendiri
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -143,6 +146,8 @@ fun HomeScreen(
     var excuseDialog by remember { mutableStateOf<Pair<Employee, String>?>(null) }
     var deleteDialog by remember { mutableStateOf<Pair<Employee, AttendanceRecord>?>(null) }
     var annulFlow by remember { mutableStateOf<AnnulFlow?>(null) }
+    // Owner meninggalkan aplikasi di tengah alur anulir: tutup, supaya status "PIN sudah benar" tidak tertinggal.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { annulFlow = null }
 
     Scaffold(
         topBar = {
@@ -268,10 +273,14 @@ fun HomeScreen(
                     "Anulir telat ${emp.name} hari ini (${rec.timeIn.take(5)}, telat ${rec.lateMinutes} menit). Masukkan PIN owner."
                 },
                 onDismiss = { annulFlow = null },
-                onVerified = { failedBefore ->
-                    if (failedBefore > 0) onMessage(pinFailedWarningText(failedBefore))
-                    annulFlow = flow.copy(verified = true)
-                },
+                onVerified = { failedBefore -> annulFlow = flow.copy(verified = true, failedWarning = failedBefore) },
+            )
+        } else if (flow.failedWarning > 0) {
+            AlertDialog(
+                onDismissRequest = { annulFlow = flow.copy(failedWarning = 0) },
+                title = { Text("Ada yang mencoba PIN") },
+                text = { Text(pinFailedWarningText(flow.failedWarning)) },
+                confirmButton = { TextButton(onClick = { annulFlow = flow.copy(failedWarning = 0) }) { Text("Lanjut") } },
             )
         } else if (flow.undo) {
             UndoAnnulDialog(

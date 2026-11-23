@@ -124,6 +124,22 @@ class AnnulRuleTest {
     }
 
     @Test
+    fun markdownCellsStayIntactWithPipesNewlinesAndBlankReason() {
+        val piped = AnnulRule.annul(rec(10, Status.TELAT, late = 12), "pintu | kunci\nhilang")!!
+        val blank = rec(11, Status.TELAT, late = 3).copy(status = Status.TEPAT, lateMinutes = 0, annulledLateMinutes = 3, annulReason = "")
+        val r = recap(listOf(piped, blank))
+        val md = RecapFormatter.markdown(sep, listOf(r), listOf(piped, blank), listOf(evan.copy(name = "Evan | E")), config, "aturan", "now")
+        val header = md.lines().first { it.startsWith("| Tanggal |") }
+        val rows = md.lines().filter { it.startsWith("| 2026-09-1") }
+        assertEquals(2, rows.size)
+        rows.forEach { assertEquals(header.count { c -> c == '|' }, it.count { c -> c == '|' }) }
+        assertTrue(rows[0].contains("dianulir, telat 12 mnt: pintu / kunci hilang"))
+        assertTrue(rows[1].contains("dianulir, telat 3 mnt)"))
+        val summary = md.lines().first { it.startsWith("| Evan") }
+        assertEquals(md.lines().first { it.startsWith("| Nama |") }.count { it == '|' }, summary.count { it == '|' })
+    }
+
+    @Test
     fun oldCsvWithoutAnnulColumnsStillImports() {
         val old = "tanggal,nama,status,jam_masuk,menit_telat\n2026-09-10,Evan,TELAT,08:12:00,12\n"
         val row = CsvImport.parse(old).rows.single()

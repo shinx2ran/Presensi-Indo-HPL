@@ -17,7 +17,9 @@ data class PinCheck(
  * - Hitungan salah disimpan permanen (tidak reset saat pindah tab, menutup dialog, atau menutup aplikasi).
  * - Tiap 5 kali salah terkunci, dan lamanya naik dua kali lipat: 30 dtk, 1, 2, 4, 8, lalu paling lama 15 menit.
  * - Kunci memakai dua jam sekaligus: jam dinding HP (bisa diubah pengguna) dan jam sejak HP menyala
- *   (elapsedRealtime, tidak bisa diubah). Memajukan jam HP tidak membuka kunci selama HP belum dinyalakan ulang.
+ *   (elapsedRealtime, tidak bisa diubah). Memajukan jam HP tidak membuka kunci.
+ * - Menyalakan ulang HP tidak membuka kunci: elapsedRealtime mulai dari 0 lagi, jadi kunci dimulai ulang
+ *   dengan lama penuhnya (paling lama 15 menit) sejak pengecekan pertama setelah HP menyala.
  * - Memundurkan jam HP tidak bisa mengunci owner lebih dari 15 menit: batas jam dinding selalu dipangkas
  *   ke paling lama 15 menit dari sekarang, dan hasil pangkasan itu yang disimpan.
  */
@@ -48,13 +50,23 @@ object PinLockout {
     /** Sisa percobaan sebelum kunci berikutnya. */
     fun attemptsLeft(failCount: Int): Int = ATTEMPTS_PER_ROUND - (failCount.coerceAtLeast(0) % ATTEMPTS_PER_ROUND)
 
+    /**
+     * HP sudah dinyalakan ulang sejak kunci dimulai: elapsedRealtime sekarang lebih kecil dari awal kunci.
+     * (Bila HP menyala lagi cukup lama sampai melewati awal kunci, dianggap HP yang sama; sisa kuncinya tetap
+     * dihitung dari elapsedRealtime, jadi total tunggu tetap tidak lebih pendek dari lama kunci.)
+     */
+    private fun rebooted(s: State, now: Clock): Boolean = s.elapsedUntil > 0L && now.elapsedMs < s.elapsedStart
+
+    private fun lockLength(s: State): Long = (s.elapsedUntil - s.elapsedStart).coerceIn(0L, MAX_LOCK_MS)
+
     /** Sisa waktu kunci (ms); 0 = tidak terkunci. Tidak pernah lebih dari [MAX_LOCK_MS]. */
     fun remainingMs(s: State, now: Clock): Long {
         val wallLeft = if (s.wallUntil > 0L) (s.wallUntil - now.wallMs).coerceIn(0L, MAX_LOCK_MS) else 0L
-        // elapsedRealtime mulai dari 0 lagi setelah HP dinyalakan ulang; nilai yang lebih kecil dari awal kunci
-        // berarti HP sudah dinyalakan ulang, jadi hanya jam dinding yang berlaku.
-        val sameBoot = s.elapsedUntil > 0L && now.elapsedMs >= s.elapsedStart
-        val elapsedLeft = if (sameBoot) (s.elapsedUntil - now.elapsedMs).coerceIn(0L, MAX_LOCK_MS) else 0L
+        val elapsedLeft = when {
+            s.elapsedUntil <= 0L -> 0L
+            rebooted(s, now) -> lockLength(s) // dimulai ulang penuh, lihat [normalize]
+            else -> (s.elapsedUntil - now.elapsedMs).coerceIn(0L, MAX_LOCK_MS)
+        }
         return maxOf(wallLeft, elapsedLeft)
     }
 
@@ -64,14 +76,18 @@ object PinLockout {
      * Hitungan salah tetap.
      */
     fun normalize(s: State, now: Clock): State {
+        val cappedWall = if (s.wallUntil > 0L) s.wallUntil.coerceAtMost(now.wallMs + MAX_LOCK_MS) else 0L
+        if (rebooted(s, now)) {
+            // Lama kunci tidak bisa diukur melewati restart, jadi kunci dimulai ulang dengan lama penuhnya.
+            val lock = lockLength(s)
+            return State(s.fails, maxOf(cappedWall, now.wallMs + lock), now.elapsedMs, now.elapsedMs + lock)
+        }
         if (remainingMs(s, now) == 0L) return State(fails = s.fails)
-        val wallUntil = if (s.wallUntil > 0L) s.wallUntil.coerceAtMost(now.wallMs + MAX_LOCK_MS) else 0L
-        val sameBoot = s.elapsedUntil > 0L && now.elapsedMs >= s.elapsedStart
         return State(
             fails = s.fails,
-            wallUntil = if (wallUntil > now.wallMs) wallUntil else 0L,
-            elapsedStart = if (sameBoot) s.elapsedStart else 0L,
-            elapsedUntil = if (sameBoot) s.elapsedUntil else 0L,
+            wallUntil = if (cappedWall > now.wallMs) cappedWall else 0L,
+            elapsedStart = s.elapsedStart,
+            elapsedUntil = s.elapsedUntil,
         )
     }
 

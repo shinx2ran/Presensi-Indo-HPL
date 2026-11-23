@@ -187,7 +187,7 @@ fun AnnulLateDialog(
         },
         confirmButton = {
             TextButton(
-                enabled = !saving && reason.isNotEmpty(),
+                enabled = !saving && reason.isNotEmpty() && change != null,
                 onClick = {
                     saving = true
                     scope.launch {

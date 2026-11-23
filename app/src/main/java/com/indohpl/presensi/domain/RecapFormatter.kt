@@ -98,7 +98,7 @@ object RecapFormatter {
         sb.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n")
         recaps.forEach { r ->
             sb.append(
-                "| ${r.employee.name} | ${r.workDaysInMonth} | ${r.hadir} | ${r.tepat} | ${r.telat} | ${r.izin} | ${r.sakit} | ${r.alpa} | ${r.outsideLocation} | ${r.creditedDays} | **${rupiah(r.earned)}** | ${rupiah(r.maxThisMonth)} |\n",
+                "| ${mdCell(r.employee.name)} | ${r.workDaysInMonth} | ${r.hadir} | ${r.tepat} | ${r.telat} | ${r.izin} | ${r.sakit} | ${r.alpa} | ${r.outsideLocation} | ${r.creditedDays} | **${rupiah(r.earned)}** | ${rupiah(r.maxThisMonth)} |\n",
             )
         }
         val creditByKey = recaps.flatMap { r -> r.dailyCredits.map { (d, v) -> (r.employee.id to d) to v } }.toMap()
@@ -111,11 +111,20 @@ object RecapFormatter {
             val jarak = r.distanceMeters?.let { GeoRule.formatDistance(it) } ?: ""
             val koord = if (r.latitude != null && r.longitude != null) GeoRule.formatCoord(r.latitude, r.longitude) else ""
             val tambah = creditByKey[r.employeeId to r.date]?.let { rupiahPlus(it) } ?: "-"
-            val status = if (r.annulledLateMinutes != null) "${r.status} (dianulir, telat ${r.annulledLateMinutes} mnt: ${r.annulReason})" else r.status
-            sb.append("| ${r.date} | ${names[r.employeeId] ?: r.employeeId} | $status | ${r.timeIn} | ${r.lateMinutes} | $tambah | $lokasi | $jarak | $koord | ${r.note} |\n")
+            val status = if (r.annulledLateMinutes != null) {
+                val reason = mdCell(r.annulReason)
+                "${r.status} (dianulir, telat ${r.annulledLateMinutes} mnt${if (reason.isNotEmpty()) ": $reason" else ""})"
+            } else {
+                r.status
+            }
+            val name = mdCell(names[r.employeeId] ?: r.employeeId.toString())
+            sb.append("| ${r.date} | $name | $status | ${r.timeIn} | ${r.lateMinutes} | $tambah | ${mdCell(lokasi)} | $jarak | $koord | ${mdCell(r.note)} |\n")
         }
         return sb.toString()
     }
+
+    /** Teks bebas di sel tabel Markdown: "|" dan baris baru akan merusak kolom. */
+    private fun mdCell(s: String): String = s.replace('|', '/').replace('\r', ' ').replace('\n', ' ').trim()
 
     private fun csvCell(s: String): String =
         if (s.any { it == ',' || it == '"' || it == '\n' }) "\"" + s.replace("\"", "\"\"") + "\"" else s

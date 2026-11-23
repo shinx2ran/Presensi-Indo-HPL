@@ -124,15 +124,63 @@ class PinLockoutTest {
     }
 
     @Test
-    fun afterRebootOnlyWallClockCounts() {
+    fun rebootRestartsTheLockInsteadOfDroppingIt() {
         val p = Phone(State(fails = 29))
         val t = Clock(10 * year, 7_200_000L)
         p.tryPin(false, t)                                    // kunci 15 menit
-        // HP dinyalakan ulang: elapsed mulai dari kecil lagi, jam dinding jujur (+2 menit).
+        // HP dinyalakan ulang: elapsed mulai dari kecil lagi. Kunci dimulai ulang penuh 15 menit.
         val rebooted = Clock(t.wallMs + 2 * min, 30_000L)
-        assertEquals(13 * min, p.open(rebooted))
-        assertEquals("data elapsed lama dibuang", 0L, p.state.elapsedUntil)
-        assertTrue(p.tryPin(true, Clock(t.wallMs + 15 * min, 30_000L + 13 * min)).ok)
+        assertEquals(15 * min, p.open(rebooted))
+        assertEquals(30_000L, p.state.elapsedStart)
+        assertFalse(p.tryPin(true, Clock(t.wallMs + 15 * min, 30_000L + 13 * min)).ok)
+        assertTrue(p.tryPin(true, Clock(t.wallMs + 17 * min, 30_000L + 15 * min)).ok)
+    }
+
+    @Test
+    fun rebootPlusClockForwardDoesNotGiveFreeGuesses() {
+        // Temuan review: kunci di uptime 64 dtk, jam HP dimajukan 1 jam, lalu HP dinyalakan ulang.
+        val p = Phone()
+        val t = Clock(10 * year, 64_000L)
+        repeat(5) { p.tryPin(false, t) }                      // kunci 30 dtk
+        val ahead = 60 * min
+        assertFalse(p.tryPin(false, Clock(t.wallMs + ahead, 70_000L)).ok)
+        assertEquals("ditolak tanpa dihitung", 5, p.state.fails)
+        // Setelah restart (uptime 40 dtk): tetap terkunci 30 dtk, tebakan tidak diperiksa.
+        val afterBoot = p.tryPin(true, Clock(t.wallMs + ahead + 60_000, 40_000L))
+        assertFalse(afterBoot.ok)
+        assertEquals(30_000L, afterBoot.lockedMsLeft)
+        assertEquals(5, p.state.fails)
+        assertTrue(p.tryPin(true, Clock(t.wallMs + ahead + 90_000, 70_000L)).ok)
+    }
+
+    @Test
+    fun repeatedRebootsNeverShortenTheLock() {
+        val p = Phone(State(fails = 29))
+        var wall = 10 * year
+        p.tryPin(false, Clock(wall, 500_000L))                // kunci 15 menit
+        // Lima kali restart cepat, masing-masing setelah 1 menit menyala, jam HP terus dimajukan.
+        repeat(5) {
+            wall += 60 * min
+            val left = p.open(Clock(wall, 20_000L))           // tepat setelah menyala
+            assertEquals(15 * min, left)
+            wall += min
+            assertFalse(p.tryPin(true, Clock(wall, 80_000L)).ok)
+        }
+    }
+
+    @Test
+    fun longUptimeAfterRebootStillWaitsAtLeastTheLockLength() {
+        // HP menyala lagi dan tidak ada yang membuka PIN sampai uptime melewati awal kunci:
+        // sisa dihitung dari elapsed, jadi total tunggu sejak menyala >= lama kunci.
+        val p = Phone(State(fails = 29))
+        p.tryPin(false, Clock(10 * year, 100_000L))           // kunci 15 menit: elapsed 100 dtk .. 1000 dtk
+        // Jam HP dimajukan 1 jam, jadi hanya uptime yang menahan.
+        val left = p.open(Clock(10 * year + 60 * min, 400_000L))
+        assertEquals(600_000L, left)                          // sudah menyala 400 dtk + sisa 600 dtk = 1000 dtk >= 900 dtk
+        // Dengan jam jujur (+2 menit), kunci jam dinding (13 menit) yang lebih lama berlaku.
+        val honest = Phone(State(fails = 29))
+        honest.tryPin(false, Clock(10 * year, 100_000L))
+        assertEquals(13 * min, honest.open(Clock(10 * year + 2 * min, 400_000L)))
     }
 
     @Test

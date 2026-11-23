@@ -88,7 +88,7 @@ Yang sengaja tidak dipakai: peringkat, warna merah, kata "dipotong", hadiah acak
 | Saldo | kasir & karyawan & owner | **hanya melihat** saldo uang rajin per bulan, tidak ada tombol ubah/ekspor |
 | Pengaturan | **owner, dikunci PIN** | anulir telat, aturan jam, uang rajin, lokasi toko, hari libur, ekspor rekap, ganti PIN |
 
-PIN owner (4–8 angka) dibuat saat tab Pengaturan pertama kali dibuka. Disimpan sebagai hash (tidak bisa dibaca dari file). Hitungan PIN salah disimpan permanen (tidak reset saat pindah tab, menutup dialog, atau menutup aplikasi): tiap 5 kali salah terkunci 30 detik, lalu 1, 2, 4, 8, dan paling lama 15 menit. Setelah owner berhasil masuk, aplikasi memberi tahu bila sebelumnya ada PIN salah. Pindah tab = terkunci lagi. PIN yang lupa hanya bisa direset dengan menghapus data aplikasi.
+PIN owner (4–8 angka) dibuat saat tab Pengaturan pertama kali dibuka. Disimpan sebagai hash (tidak bisa dibaca dari file). Hitungan PIN salah disimpan permanen (tidak reset saat pindah tab, menutup dialog, menutup aplikasi, atau menyalakan ulang HP): tiap 5 kali salah terkunci 30 detik, lalu 1, 2, 4, 8, dan paling lama 15 menit. Mengubah jam HP tidak membuka kunci, dan koreksi jam tidak bisa mengunci owner lebih dari 15 menit. Setelah owner berhasil masuk, aplikasi memberi tahu bila sebelumnya ada PIN salah. Pindah tab = terkunci lagi; aplikasi yang ditinggal lebih dari 1 menit (mis. layar mati) juga meminta PIN lagi. PIN yang lupa hanya bisa direset dengan menghapus data aplikasi.
 
 ## Anulir telat (khusus owner)
 
