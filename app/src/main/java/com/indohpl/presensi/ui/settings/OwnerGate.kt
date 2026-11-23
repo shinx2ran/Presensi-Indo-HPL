@@ -113,17 +113,20 @@ private fun EnterPinScreen(repository: Repository, onUnlocked: (failedBefore: In
     val scope = rememberCoroutineScope()
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
     val lock = rememberPinLock(repository)
     val locked = lock.isLocked
 
     fun submit() {
-        if (locked) return
+        if (locked || busy || pin.isEmpty()) return
+        busy = true
         scope.launch {
             val r = repository.settingsStore.checkOwnerPin(pin)
             pin = ""
+            busy = false
             when {
                 r.ok -> onUnlocked(r.failedBefore)
-                r.lockedUntil > 0L -> { lock.lockUntil(r.lockedUntil); error = "Terlalu banyak percobaan." }
+                r.lockedMsLeft > 0L -> { lock.lockFor(r.lockedMsLeft); error = "Terlalu banyak percobaan." }
                 else -> error = "PIN salah (${r.attemptsLeft} percobaan lagi)"
             }
         }
@@ -136,7 +139,7 @@ private fun EnterPinScreen(repository: Repository, onUnlocked: (failedBefore: In
     ) {
         PinField(pin, { pin = it }, "PIN owner", enabled = !locked, onDone = { submit() })
         Spacer(Modifier.height(16.dp))
-        Button(onClick = { submit() }, enabled = !locked && pin.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("Buka") }
+        Button(onClick = { submit() }, enabled = !locked && !busy && pin.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("Buka") }
     }
 }
 
@@ -145,9 +148,10 @@ internal class PinLockState {
     var lockedUntil by mutableLongStateOf(0L)
     var now by mutableLongStateOf(System.currentTimeMillis())
     val isLocked: Boolean get() = now < lockedUntil
-    fun lockUntil(until: Long) {
+    /** Kunci tampilan selama [ms] dari sekarang (0 = tidak terkunci). Sisa waktunya dihitung SettingsStore. */
+    fun lockFor(ms: Long) {
         now = System.currentTimeMillis()
-        lockedUntil = until
+        lockedUntil = now + ms.coerceAtLeast(0L)
     }
     fun label(): String {
         val s = ((lockedUntil - now) / 1000) + 1
@@ -158,7 +162,7 @@ internal class PinLockState {
 @Composable
 internal fun rememberPinLock(repository: Repository): PinLockState {
     val state = remember { PinLockState() }
-    LaunchedEffect(Unit) { state.lockUntil(repository.settingsStore.ownerPinLockedUntil()) }
+    LaunchedEffect(Unit) { state.lockFor(repository.settingsStore.ownerPinLockMsLeft()) }
     LaunchedEffect(state.lockedUntil) {
         while (System.currentTimeMillis() < state.lockedUntil) {
             state.now = System.currentTimeMillis()

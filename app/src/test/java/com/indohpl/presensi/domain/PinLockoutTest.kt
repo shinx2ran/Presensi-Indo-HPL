@@ -1,9 +1,30 @@
 package com.indohpl.presensi.domain
 
+import com.indohpl.presensi.domain.PinLockout.Clock
+import com.indohpl.presensi.domain.PinLockout.State
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PinLockoutTest {
+    private val min = 60_000L
+    private val year = 365L * 24 * 60 * min
+
+    /** Simulasi penyimpanan: tiap percobaan memakai dan menyimpan state, seperti SettingsStore.checkOwnerPin. */
+    private class Phone(var state: State = State()) {
+        fun tryPin(correct: Boolean, now: Clock): PinCheck {
+            val (next, r) = PinLockout.attempt(state, correct, now)
+            state = next
+            return r
+        }
+        /** Seperti SettingsStore.ownerPinLockMsLeft: rapikan, simpan, kembalikan sisa. */
+        fun open(now: Clock): Long {
+            state = PinLockout.normalize(state, now)
+            return PinLockout.remainingMs(state, now)
+        }
+    }
+
     @Test
     fun locksEveryFifthFailureAndDoubles() {
         assertEquals(0L, PinLockout.lockMsAfter(0))
@@ -28,10 +49,101 @@ class PinLockoutTest {
     }
 
     @Test
-    fun clockRollbackCannotLockForever() {
-        val now = 1_000_000L
-        assertEquals(now + 30_000L, PinLockout.effectiveLockedUntil(now + 30_000L, now))
-        assertEquals(now + PinLockout.MAX_LOCK_MS, PinLockout.effectiveLockedUntil(now + 365L * 24 * 3600 * 1000, now))
-        assertEquals(0L, PinLockout.effectiveLockedUntil(0L, now))
+    fun fiveWrongLockThirtySecondsAndCorrectPinIsRefusedWhileLocked() {
+        val p = Phone()
+        val t = Clock(1_000_000L, 50_000L)
+        repeat(4) { i ->
+            val r = p.tryPin(false, t)
+            assertFalse(r.ok)
+            assertEquals(4 - i, r.attemptsLeft)
+            assertEquals(0L, r.lockedMsLeft)
+        }
+        val fifth = p.tryPin(false, t)
+        assertEquals(30_000L, fifth.lockedMsLeft)
+        val whileLocked = p.tryPin(true, Clock(t.wallMs + 10_000, t.elapsedMs + 10_000))
+        assertFalse("PIN benar pun ditolak saat terkunci", whileLocked.ok)
+        assertEquals(20_000L, whileLocked.lockedMsLeft)
+        assertEquals("percobaan saat terkunci tidak menambah hitungan", 5, p.state.fails)
+
+        val after = p.tryPin(true, Clock(t.wallMs + 30_000, t.elapsedMs + 30_000))
+        assertTrue(after.ok)
+        assertEquals(5, after.failedBefore)
+        assertEquals(State(), p.state)
+    }
+
+    @Test
+    fun counterSurvivesBetweenAttemptsAndOnlyResetsOnSuccess() {
+        val p = Phone()
+        var t = Clock(0L, 0L)
+        repeat(5) { p.tryPin(false, t) }                     // kunci 30 dtk
+        t = Clock(t.wallMs + 31_000, t.elapsedMs + 31_000)
+        repeat(4) { p.tryPin(false, t) }
+        assertEquals(9, p.state.fails)
+        assertEquals(60_000L, p.tryPin(false, t).lockedMsLeft) // ronde 2: 1 menit
+    }
+
+    @Test
+    fun movingClockForwardDoesNotUnlockWithoutReboot() {
+        val p = Phone(State(fails = 29))
+        val t = Clock(10 * year, 3_600_000L)
+        assertEquals(15 * min, p.tryPin(false, t).lockedMsLeft)
+        // Jam HP dimajukan 1 jam, padahal baru lewat 1 detik.
+        val cheat = Clock(t.wallMs + 60 * min, t.elapsedMs + 1_000)
+        assertEquals(15 * min - 1_000, p.open(cheat))
+        assertFalse(p.tryPin(true, cheat).ok)
+        // Setelah 15 menit sungguhan, terbuka.
+        assertTrue(p.tryPin(true, Clock(cheat.wallMs + 15 * min, t.elapsedMs + 15 * min)).ok)
+    }
+
+    @Test
+    fun clockSetAheadThenBackCannotLockOwnerForever() {
+        // Skenario reviewer: jam HP dimajukan setahun, 5 kali salah, lalu jam dikembalikan.
+        val p = Phone()
+        val real = 10 * year
+        val ahead = Clock(real + year, 1_000_000L)
+        repeat(5) { p.tryPin(false, ahead) }
+        // Jam dikembalikan (elapsed terus berjalan). Owner membuka layar PIN.
+        val back = Clock(real, ahead.elapsedMs + 5_000)
+        val shown = p.open(back)
+        assertTrue(shown <= PinLockout.MAX_LOCK_MS)
+        assertTrue("batas yang dipangkas disimpan", p.state.wallUntil <= back.wallMs + PinLockout.MAX_LOCK_MS)
+        // 15 menit kemudian PIN benar diterima.
+        val later = Clock(back.wallMs + 15 * min, back.elapsedMs + 15 * min)
+        assertTrue(p.tryPin(true, later).ok)
+    }
+
+    @Test
+    fun clockBackWithoutOpeningScreenFirstAlsoEnds() {
+        val p = Phone()
+        val real = 10 * year
+        repeat(5) { p.tryPin(false, Clock(real + year, 1_000_000L)) }
+        // Percobaan pertama setelah jam dikembalikan juga memangkas dan menyimpan batasnya.
+        val back = Clock(real, 1_005_000L)
+        assertTrue(p.tryPin(true, back).lockedMsLeft <= PinLockout.MAX_LOCK_MS)
+        assertTrue(p.tryPin(true, Clock(real + 15 * min, 1_005_000L + 15 * min)).ok)
+    }
+
+    @Test
+    fun afterRebootOnlyWallClockCounts() {
+        val p = Phone(State(fails = 29))
+        val t = Clock(10 * year, 7_200_000L)
+        p.tryPin(false, t)                                    // kunci 15 menit
+        // HP dinyalakan ulang: elapsed mulai dari kecil lagi, jam dinding jujur (+2 menit).
+        val rebooted = Clock(t.wallMs + 2 * min, 30_000L)
+        assertEquals(13 * min, p.open(rebooted))
+        assertEquals("data elapsed lama dibuang", 0L, p.state.elapsedUntil)
+        assertTrue(p.tryPin(true, Clock(t.wallMs + 15 * min, 30_000L + 13 * min)).ok)
+    }
+
+    @Test
+    fun expiredLockIsClearedButFailsKept() {
+        val s = PinLockout.normalize(State(fails = 7, wallUntil = 100L, elapsedStart = 0L, elapsedUntil = 100L), Clock(200L, 200L))
+        assertEquals(State(fails = 7), s)
+    }
+
+    @Test
+    fun remainingNeverExceedsMax() {
+        val s = State(fails = 5, wallUntil = Long.MAX_VALUE, elapsedStart = 0L, elapsedUntil = Long.MAX_VALUE)
+        assertEquals(PinLockout.MAX_LOCK_MS, PinLockout.remainingMs(s, Clock(0L, 0L)))
     }
 }

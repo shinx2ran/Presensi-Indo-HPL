@@ -1,15 +1,41 @@
 package com.indohpl.presensi.domain
 
+/** Hasil satu kali cek PIN owner. */
+data class PinCheck(
+    val ok: Boolean,
+    /** > 0: sedang terkunci selama sekian milidetik lagi; PIN tidak diperiksa. */
+    val lockedMsLeft: Long = 0L,
+    val attemptsLeft: Int = PinLockout.ATTEMPTS_PER_ROUND,
+    /** Jumlah PIN salah sebelum berhasil kali ini, supaya owner tahu bila ada yang mencoba-coba. */
+    val failedBefore: Int = 0,
+)
+
 /**
- * Kunci PIN owner setelah salah berulang. Hitungan salah disimpan permanen (tidak reset saat pindah tab,
- * menutup dialog, atau menutup aplikasi), dan lama kunci naik dua kali lipat tiap 5 kali salah:
- * 30 dtk, 1 mnt, 2 mnt, 4 mnt, 8 mnt, lalu 15 mnt. PIN 4 angka jadi butuh ratusan jam untuk ditebak.
- * Murni Kotlin supaya bisa diuji.
+ * Kunci PIN owner setelah salah berulang. Murni Kotlin supaya seluruh skenario bisa diuji; SettingsStore
+ * hanya menyimpan [State] dan memberi waktu sekarang.
+ *
+ * - Hitungan salah disimpan permanen (tidak reset saat pindah tab, menutup dialog, atau menutup aplikasi).
+ * - Tiap 5 kali salah terkunci, dan lamanya naik dua kali lipat: 30 dtk, 1, 2, 4, 8, lalu paling lama 15 menit.
+ * - Kunci memakai dua jam sekaligus: jam dinding HP (bisa diubah pengguna) dan jam sejak HP menyala
+ *   (elapsedRealtime, tidak bisa diubah). Memajukan jam HP tidak membuka kunci selama HP belum dinyalakan ulang.
+ * - Memundurkan jam HP tidak bisa mengunci owner lebih dari 15 menit: batas jam dinding selalu dipangkas
+ *   ke paling lama 15 menit dari sekarang, dan hasil pangkasan itu yang disimpan.
  */
 object PinLockout {
     const val ATTEMPTS_PER_ROUND = 5
     const val BASE_LOCK_MS = 30_000L
     const val MAX_LOCK_MS = 15 * 60_000L
+
+    /** Waktu sekarang: [wallMs] = System.currentTimeMillis, [elapsedMs] = SystemClock.elapsedRealtime. */
+    data class Clock(val wallMs: Long, val elapsedMs: Long)
+
+    /** Yang disimpan. Nilai 0 = tidak ada kunci. */
+    data class State(
+        val fails: Int = 0,
+        val wallUntil: Long = 0L,
+        val elapsedStart: Long = 0L,
+        val elapsedUntil: Long = 0L,
+    )
 
     /** Lama kunci tepat setelah salah ke-[failCount] berturut-turut; 0 = belum dikunci. */
     fun lockMsAfter(failCount: Int): Long {
@@ -22,9 +48,46 @@ object PinLockout {
     /** Sisa percobaan sebelum kunci berikutnya. */
     fun attemptsLeft(failCount: Int): Int = ATTEMPTS_PER_ROUND - (failCount.coerceAtLeast(0) % ATTEMPTS_PER_ROUND)
 
+    /** Sisa waktu kunci (ms); 0 = tidak terkunci. Tidak pernah lebih dari [MAX_LOCK_MS]. */
+    fun remainingMs(s: State, now: Clock): Long {
+        val wallLeft = if (s.wallUntil > 0L) (s.wallUntil - now.wallMs).coerceIn(0L, MAX_LOCK_MS) else 0L
+        // elapsedRealtime mulai dari 0 lagi setelah HP dinyalakan ulang; nilai yang lebih kecil dari awal kunci
+        // berarti HP sudah dinyalakan ulang, jadi hanya jam dinding yang berlaku.
+        val sameBoot = s.elapsedUntil > 0L && now.elapsedMs >= s.elapsedStart
+        val elapsedLeft = if (sameBoot) (s.elapsedUntil - now.elapsedMs).coerceIn(0L, MAX_LOCK_MS) else 0L
+        return maxOf(wallLeft, elapsedLeft)
+    }
+
     /**
-     * Batas kunci yang berlaku. Bila jam HP pernah dimundurkan, batas tersimpan bisa jauh di masa depan;
-     * dibatasi paling lama [MAX_LOCK_MS] dari sekarang supaya owner tidak terkunci bertahun-tahun.
+     * Merapikan [State] sebelum dipakai dan disimpan: batas jam dinding dipangkas ke paling lama 15 menit dari
+     * sekarang, data kunci dari sebelum HP dinyalakan ulang dibuang, dan kunci yang sudah habis dihapus.
+     * Hitungan salah tetap.
      */
-    fun effectiveLockedUntil(storedUntil: Long, now: Long): Long = storedUntil.coerceAtMost(now + MAX_LOCK_MS)
+    fun normalize(s: State, now: Clock): State {
+        if (remainingMs(s, now) == 0L) return State(fails = s.fails)
+        val wallUntil = if (s.wallUntil > 0L) s.wallUntil.coerceAtMost(now.wallMs + MAX_LOCK_MS) else 0L
+        val sameBoot = s.elapsedUntil > 0L && now.elapsedMs >= s.elapsedStart
+        return State(
+            fails = s.fails,
+            wallUntil = if (wallUntil > now.wallMs) wallUntil else 0L,
+            elapsedStart = if (sameBoot) s.elapsedStart else 0L,
+            elapsedUntil = if (sameBoot) s.elapsedUntil else 0L,
+        )
+    }
+
+    /** Satu percobaan PIN. Mengembalikan state baru (untuk disimpan) dan hasilnya. */
+    fun attempt(state: State, pinCorrect: Boolean, now: Clock): Pair<State, PinCheck> {
+        val s = normalize(state, now)
+        val left = remainingMs(s, now)
+        if (left > 0L) return s to PinCheck(ok = false, lockedMsLeft = left, attemptsLeft = 0)
+        if (pinCorrect) return State() to PinCheck(ok = true, failedBefore = s.fails)
+        val n = s.fails + 1
+        val lock = lockMsAfter(n)
+        return if (lock > 0L) {
+            State(n, now.wallMs + lock, now.elapsedMs, now.elapsedMs + lock) to
+                PinCheck(ok = false, lockedMsLeft = lock, attemptsLeft = 0)
+        } else {
+            State(fails = n) to PinCheck(ok = false, attemptsLeft = attemptsLeft(n))
+        }
+    }
 }

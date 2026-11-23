@@ -77,7 +77,7 @@ fun OwnerPinDialog(
             busy = false
             when {
                 r.ok -> onVerified(r.failedBefore)
-                r.lockedUntil > 0L -> { lock.lockUntil(r.lockedUntil); error = "Terlalu banyak percobaan." }
+                r.lockedMsLeft > 0L -> { lock.lockFor(r.lockedMsLeft); error = "Terlalu banyak percobaan." }
                 else -> error = "PIN salah (${r.attemptsLeft} percobaan lagi)"
             }
         }
