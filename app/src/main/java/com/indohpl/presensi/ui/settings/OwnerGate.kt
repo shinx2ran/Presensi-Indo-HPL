@@ -55,7 +55,9 @@ private const val RELOCK_AFTER_MS = 60_000L
 /**
  * true saat Pengaturan tertutup lapisan PIN lagi. Dialog di bagian Pengaturan (anulir, pulihkan, hapus data)
  * adalah jendela terpisah yang akan tampil DI ATAS lapisan itu, jadi bagian-bagian itu harus menyembunyikan
- * dialognya selama nilai ini true. Statusnya tetap tersimpan dan dialog muncul lagi setelah PIN benar.
+ * dialognya selama nilai ini true; hasil pemilih file (impor CSV) juga ditahan sampai PIN benar. Pilihan yang
+ * sedang dibuka (catatan, file cadangan) tetap tersimpan dan muncul lagi setelah PIN benar; isian di dalam dialog
+ * (mis. alasan yang sedang diketik) diulang dari awal.
  */
 internal val LocalOwnerRelocked = compositionLocalOf { false }
 

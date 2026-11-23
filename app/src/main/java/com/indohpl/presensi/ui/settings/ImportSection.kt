@@ -11,6 +11,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,9 +36,19 @@ fun ImportSection(repository: Repository, onMessage: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     var report by remember { mutableStateOf<String?>(null) }
+    // File yang dipilih ditahan dulu. Impor baru berjalan saat Pengaturan tidak tertutup lapisan PIN: bila owner
+    // meninggalkan pemilih file lebih dari 1 menit, orang lain yang memilih file tidak bisa langsung mengimpornya.
+    var pendingUris by remember { mutableStateOf<List<Uri>?>(null) }
+    val relocked = LocalOwnerRelocked.current
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
-        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        if (uris.isNotEmpty()) pendingUris = uris
+    }
+
+    LaunchedEffect(pendingUris, relocked) {
+        val uris = pendingUris ?: return@LaunchedEffect
+        if (relocked) return@LaunchedEffect
+        pendingUris = null
         busy = true
         scope.launch {
             val picked = withContext(Dispatchers.IO) {
