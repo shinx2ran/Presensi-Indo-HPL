@@ -27,7 +27,7 @@ class SalesSnapshotTest {
         people = listOf(
             SalesBonusPerson(Employee(1, "Sara", "P"), true, 0, emptyList(), 0, BonusShare.FULL, BonusShare.FULL, 800_000L),
             SalesBonusPerson(
-                Employee(3, "Evan \\"E\\"", "L"), true, 2,
+                Employee(3, "Evan \"E\"", "L"), true, 2,
                 listOf(AbsenceItem(LocalDate.of(2026, 12, 10), 2, "izin")), 1, BonusShare.THREE_QUARTERS, BonusShare.THREE_QUARTERS, 600_000L,
             ),
         ),
@@ -43,7 +43,7 @@ class SalesSnapshotTest {
 
     @Test
     fun backupCarriesSalesDataAndOldBackupsHaveNone() {
-        val month = SalesMonth("2026-12", 700_000_000L, 50_000_000L, "2026-12-20", "catatan, \\"kutip\\"", "5", 123L, SalesSnapshot.encode(result), 456L)
+        val month = SalesMonth("2026-12", 700_000_000L, 50_000_000L, "2026-12-20", "catatan, \"kutip\"", "5", 123L, SalesSnapshot.encode(result), 456L)
         val event = BonusEvent(9, 3, "2026-12-05", BonusEventType.TEGURAN, "main HP", "Koko", 789L)
         val cfg = SalesBonusConfig(listOf(SalesTier(500_000_000L, 400_000L)), YearMonth.of(2027, 1))
         val data = BackupData("now", "2.0.40", listOf(Employee(3, "Evan", "L")), emptyList(), emptyList(), AppSettings(), listOf(month), listOf(event), cfg)
