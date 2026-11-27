@@ -8,14 +8,16 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [Employee::class, AttendanceRecord::class, Holiday::class],
-    version = 5,
+    entities = [Employee::class, AttendanceRecord::class, Holiday::class, SalesMonth::class, BonusEvent::class],
+    version = 6,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun employeeDao(): EmployeeDao
     abstract fun attendanceDao(): AttendanceDao
     abstract fun holidayDao(): HolidayDao
+    abstract fun salesMonthDao(): SalesMonthDao
+    abstract fun bonusEventDao(): BonusEventDao
 
     companion object {
         @Volatile private var instance: AppDatabase? = null
@@ -71,13 +73,35 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v5 -> v6: bonus penjualan (penjualan per bulan, teguran & setengah hari). Tabel baru saja. */
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `sales_months` (`ym` TEXT NOT NULL, `grossSales` INTEGER NOT NULL, " +
+                        "`excludedSales` INTEGER NOT NULL, `asOfDate` TEXT NOT NULL, `note` TEXT NOT NULL, " +
+                        "`excludedEmployeeIds` TEXT NOT NULL, `paidAt` INTEGER, `snapshot` TEXT NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL, PRIMARY KEY(`ym`))",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `bonus_events` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`employeeId` INTEGER NOT NULL, `date` TEXT NOT NULL, `type` TEXT NOT NULL, `note` TEXT NOT NULL, " +
+                        "`byWhom` TEXT NOT NULL, `createdAt` INTEGER NOT NULL)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_bonus_events_date` ON `bonus_events` (`date`)")
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_bonus_events_employeeId_date_type_createdAt` " +
+                        "ON `bonus_events` (`employeeId`, `date`, `type`, `createdAt`)",
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "presensi.db",
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build().also { instance = it }
             }
     }
 }

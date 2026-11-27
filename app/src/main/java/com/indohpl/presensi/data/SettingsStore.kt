@@ -14,7 +14,10 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.indohpl.presensi.domain.BonusConfig
 import com.indohpl.presensi.domain.PinCheck
 import com.indohpl.presensi.domain.PinLockout
+import com.indohpl.presensi.domain.SalesBonus
+import com.indohpl.presensi.domain.SalesBonusConfig
 import java.time.DayOfWeek
+import java.time.YearMonth
 import java.security.MessageDigest
 import java.security.SecureRandom
 import kotlinx.coroutines.CoroutineScope
@@ -89,6 +92,8 @@ class SettingsStore(private val context: Context) {
         val LAST_BACKUP_AT = longPreferencesKey("last_backup_at")
         val LAST_BACKUP_FILE = stringPreferencesKey("last_backup_file")
         val LAST_CLEANUP_AT = longPreferencesKey("last_cleanup_at")
+        val SALES_TIERS = stringPreferencesKey("sales_bonus_tiers")
+        val SALES_START = stringPreferencesKey("sales_bonus_start")
     }
 
     // ---------- Catatan versi, cadangan, dan pembersihan (dipakai Inspector) ----------
@@ -119,6 +124,23 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setLastCleanupAt(at: Long) {
         context.dataStore.edit { it[Keys.LAST_CLEANUP_AT] = at }
+    }
+
+    // ---------- Bonus penjualan (target & bonus per orang) ----------
+
+    /** Disimpan terpisah dari [AppSettings] supaya formulir aturan jam tidak pernah menimpanya. */
+    val salesBonusConfig: Flow<SalesBonusConfig> = context.dataStore.data.map { p ->
+        SalesBonusConfig(
+            tiers = SalesBonus.decodeTiers(p[Keys.SALES_TIERS]),
+            startMonth = p[Keys.SALES_START]?.let { runCatching { YearMonth.parse(it) }.getOrNull() } ?: SalesBonus.DEFAULT_START,
+        )
+    }
+
+    suspend fun saveSalesBonusConfig(c: SalesBonusConfig) {
+        context.dataStore.edit { p ->
+            p[Keys.SALES_TIERS] = SalesBonus.encodeTiers(c.sortedTiers.ifEmpty { SalesBonus.DEFAULT_TIERS })
+            p[Keys.SALES_START] = c.startMonth.toString()
+        }
     }
 
     // ---------- Migrasi sekali jalan ----------

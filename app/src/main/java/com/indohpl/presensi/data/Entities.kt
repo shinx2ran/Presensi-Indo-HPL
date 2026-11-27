@@ -61,3 +61,44 @@ data class Holiday(
     @PrimaryKey val date: String, // yyyy-MM-dd
     val name: String,
 )
+
+/**
+ * Penjualan toko satu bulan untuk bonus penjualan (diisi owner dari laporan Toqoo yang dicek Koko).
+ * Penjualan yang dihitung = [grossSales] - [excludedSales] (proyek CE LENY / Pawan 5 tidak dihitung).
+ */
+@Entity(tableName = "sales_months")
+data class SalesMonth(
+    @PrimaryKey val ym: String,          // yyyy-MM
+    val grossSales: Long,                // total penjualan dari laporan Toqoo (Rp)
+    val excludedSales: Long,             // dikurangi: barang untuk proyek CE LENY (Pawan 5) (Rp)
+    val asOfDate: String,                // data penjualan sampai tanggal ini (yyyy-MM-dd)
+    val note: String,
+    val excludedEmployeeIds: String,     // id karyawan yang TIDAK ikut bonus bulan ini, dipisah koma ("" = semua ikut)
+    val paidAt: Long?,                   // waktu ditandai "sudah dibayar"; null = belum (hasil masih dihitung ulang)
+    val snapshot: String,                // hasil yang dikunci saat ditandai dibayar (JSON); "" bila belum
+    val updatedAt: Long,
+)
+
+/** Jenis catatan owner untuk bonus penjualan. */
+object BonusEventType {
+    const val TEGURAN = "TEGURAN"             // teguran oleh Akong / Koko; teguran ke-2 dalam sebulan = tidak dapat bonus
+    const val SETENGAH_HARI = "SETENGAH_HARI" // tidak masuk setengah hari / pulang sebelum waktunya = 1/2 hari tidak masuk
+}
+
+/** Catatan owner: teguran atau setengah hari. Unik per (karyawan, tanggal, jenis, waktu dibuat) agar pulihkan tidak menggandakan. */
+@Entity(
+    tableName = "bonus_events",
+    indices = [
+        Index(value = ["date"]),
+        Index(value = ["employeeId", "date", "type", "createdAt"], unique = true),
+    ],
+)
+data class BonusEvent(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val employeeId: Long,
+    val date: String,                    // yyyy-MM-dd
+    val type: String,                    // lihat [BonusEventType]
+    val note: String,
+    val byWhom: String,                  // mis. "Akong", "Koko"
+    val createdAt: Long,
+)

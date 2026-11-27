@@ -60,10 +60,11 @@ fun ExportPanel(repository: Repository, onMessage: (String) -> Unit) {
             workDayOfWeeks = settings.workDays, holidays = holidays.map { LocalDate.parse(it.date) }.toSet(),
             config = settings.bonusConfig(),
         )
+        val sales = repository.salesBonusState(month)
         val md = RecapFormatter.markdown(
             ym = month, recaps = recaps, records = records, employees = employees, config = settings.bonusConfig(),
             rulesText = settings.rulesText(), generatedAt = LocalDateTime.now().format(RecapFormatter.DATE_TIME_FMT),
-        )
+        ) + RecapFormatter.salesBonusMarkdown(sales.result, sales.config, sales.month?.asOfDate.orEmpty(), sales.paid)
         return Triple(RecapFormatter.detailCsv(month, employees, records), RecapFormatter.summaryCsv(month, recaps), md)
     }
 

@@ -123,6 +123,49 @@ object RecapFormatter {
         return sb.toString()
     }
 
+    /**
+     * Bagian "Bonus penjualan" untuk rekap Markdown (ditambahkan di akhir rekap bulanan).
+     * [asOf]: data penjualan sampai tanggal; [paid]: bulan sudah ditandai dibayar (angka dikunci).
+     */
+    fun salesBonusMarkdown(result: SalesBonusResult, config: SalesBonusConfig, asOf: String, paid: Boolean): String {
+        val sb = StringBuilder()
+        sb.append("\n## Bonus penjualan toko\n\n")
+        if (!config.appliesTo(result.ym)) {
+            sb.append("Bonus penjualan berlaku mulai ${monthLabel(config.startMonth)}.\n")
+            return sb.toString()
+        }
+        sb.append("Penjualan dihitung (Toqoo, tanpa proyek CE LENY): **${rupiah(result.netSales)}**")
+        if (asOf.isNotBlank()) sb.append(" (data sampai $asOf)")
+        sb.append(if (paid) ". Status: **sudah dibayar** (angka dikunci).\n\n" else ". Status: belum dibayar (angka bisa berubah).\n\n")
+        sb.append("Target: ")
+        sb.append(config.sortedTiers.joinToString(" · ") { "${SalesBonus.juta(it.minSales)} → ${rupiah(it.perPerson)}/orang" })
+        sb.append("\n\n")
+        val tier = result.tier
+        if (tier == null) {
+            val next = result.nextTier
+            sb.append(if (next != null) "Belum mencapai target ${SalesBonus.juta(next.minSales)} (kurang ${rupiah(result.shortfall)}).\n" else "Target belum diatur.\n")
+            return sb.toString()
+        }
+        sb.append("Target ${SalesBonus.juta(tier.minSales)} tercapai: ${rupiah(tier.perPerson)}/orang x ${result.participants} peserta = uang bonus **${rupiah(result.pool)}**.\n\n")
+        sb.append("| Nama | Ikut | Tidak masuk (hari) | Teguran | Bagian | Bonus |\n")
+        sb.append("|---|---|---:|---:|---|---:|\n")
+        result.people.forEach { p ->
+            val days = if (p.absentHalfDays % 2 == 0) "${p.absentHalfDays / 2}" else "${p.absentHalfDays / 2},5"
+            sb.append("| ${mdCell(p.employee.name)} | ${if (p.participating) "ya" else "tidak"} | $days | ${p.warnings} | ${p.share.label} | **${rupiah(p.payout)}** |\n")
+        }
+        sb.append("\nTotal dibagikan: ${rupiah(result.totalPaid)}")
+        if (result.totalPaid != result.pool) sb.append(" (selisih pembulatan ${rupiah(result.pool - result.totalPaid)})")
+        sb.append(".\n")
+        val details = result.people.flatMap { p -> p.absences.map { p.employee.name to it } }
+        if (details.isNotEmpty()) {
+            sb.append("\nRincian tidak masuk:\n")
+            details.forEach { (name, a) ->
+                sb.append("- ${a.date} ${mdCell(name)}: ${if (a.halfDays >= 2) "1 hari" else "½ hari"} (${mdCell(a.reason)})\n")
+            }
+        }
+        return sb.toString()
+    }
+
     /** Teks bebas di sel tabel Markdown: "|" dan baris baru akan merusak kolom. */
     private fun mdCell(s: String): String = s.replace('|', '/').replace('\r', ' ').replace('\n', ' ').trim()
 

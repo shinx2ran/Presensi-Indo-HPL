@@ -3,7 +3,11 @@ package com.indohpl.presensi.data.backup
 import com.indohpl.presensi.data.AppSettings
 import com.indohpl.presensi.data.AttendanceRecord
 import com.indohpl.presensi.data.Employee
+import com.indohpl.presensi.data.BonusEvent
 import com.indohpl.presensi.data.Holiday
+import com.indohpl.presensi.data.SalesMonth
+import com.indohpl.presensi.domain.SalesBonus
+import com.indohpl.presensi.domain.SalesBonusConfig
 import java.time.DayOfWeek
 import org.json.JSONArray
 import org.json.JSONException
@@ -17,6 +21,10 @@ data class BackupData(
     val attendance: List<AttendanceRecord>,
     val holidays: List<Holiday>,
     val settings: AppSettings,
+    // Bonus penjualan (opsional: cadangan versi lama tidak punya).
+    val salesMonths: List<SalesMonth> = emptyList(),
+    val bonusEvents: List<BonusEvent> = emptyList(),
+    val salesConfig: SalesBonusConfig? = null,
 )
 
 /** Mengubah [BackupData] dari/ke teks JSON. Murni Kotlin + org.json supaya bisa diuji. */
@@ -92,6 +100,39 @@ object BackupCodec {
                 .put("requireLocation", s.requireLocation)
                 .put("retentionMonths", s.retentionMonths),
         )
+
+        val sales = JSONArray()
+        d.salesMonths.forEach { m ->
+            sales.put(
+                JSONObject()
+                    .put("ym", m.ym)
+                    .put("grossSales", m.grossSales)
+                    .put("excludedSales", m.excludedSales)
+                    .put("asOfDate", m.asOfDate)
+                    .put("note", m.note)
+                    .put("excludedEmployeeIds", m.excludedEmployeeIds)
+                    .put("paidAt", m.paidAt ?: JSONObject.NULL)
+                    .put("snapshot", m.snapshot)
+                    .put("updatedAt", m.updatedAt),
+            )
+        }
+        root.put("salesMonths", sales)
+        val events = JSONArray()
+        d.bonusEvents.forEach { e ->
+            events.put(
+                JSONObject()
+                    .put("employeeId", e.employeeId)
+                    .put("date", e.date)
+                    .put("type", e.type)
+                    .put("note", e.note)
+                    .put("byWhom", e.byWhom)
+                    .put("createdAt", e.createdAt),
+            )
+        }
+        root.put("bonusEvents", events)
+        d.salesConfig?.let { c ->
+            root.put("salesBonus", JSONObject().put("tiers", SalesBonus.encodeTiers(c.tiers)).put("startMonth", c.startMonth.toString()))
+        }
         return root.toString()
     }
 
@@ -150,6 +191,45 @@ object BackupCodec {
                 }
             }
 
+            val salesMonths = mutableListOf<SalesMonth>()
+            root.optJSONArray("salesMonths")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    salesMonths += SalesMonth(
+                        ym = o.getString("ym"),
+                        grossSales = long(o, "grossSales", 0L),
+                        excludedSales = long(o, "excludedSales", 0L),
+                        asOfDate = str(o, "asOfDate", ""),
+                        note = str(o, "note", ""),
+                        excludedEmployeeIds = str(o, "excludedEmployeeIds", ""),
+                        paidAt = if (o.isNull("paidAt")) null else o.getLong("paidAt"),
+                        snapshot = str(o, "snapshot", ""),
+                        updatedAt = long(o, "updatedAt", 0L),
+                    )
+                }
+            }
+            val bonusEvents = mutableListOf<BonusEvent>()
+            root.optJSONArray("bonusEvents")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    bonusEvents += BonusEvent(
+                        id = 0,
+                        employeeId = o.getLong("employeeId"),
+                        date = o.getString("date"),
+                        type = o.getString("type"),
+                        note = str(o, "note", ""),
+                        byWhom = str(o, "byWhom", ""),
+                        createdAt = long(o, "createdAt", 0L),
+                    )
+                }
+            }
+            val salesConfig = root.optJSONObject("salesBonus")?.let { o ->
+                SalesBonusConfig(
+                    tiers = SalesBonus.decodeTiers(if (o.isNull("tiers")) null else o.getString("tiers")),
+                    startMonth = runCatching { java.time.YearMonth.parse(str(o, "startMonth", "")) }.getOrNull() ?: SalesBonus.DEFAULT_START,
+                )
+            }
+
             return BackupData(
                 createdAt = str(root, "createdAt", ""),
                 appVersion = str(root, "appVersion", ""),
@@ -157,6 +237,9 @@ object BackupCodec {
                 attendance = attendance,
                 holidays = holidays,
                 settings = decodeSettings(root.optJSONObject("settings")),
+                salesMonths = salesMonths,
+                bonusEvents = bonusEvents,
+                salesConfig = salesConfig,
             )
         } catch (e: JSONException) {
             throw IllegalArgumentException(NOT_A_BACKUP)

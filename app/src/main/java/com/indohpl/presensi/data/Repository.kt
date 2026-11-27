@@ -23,6 +23,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -34,6 +35,8 @@ class Repository(context: Context) {
     val employeeDao = db.employeeDao()
     val attendanceDao = db.attendanceDao()
     val holidayDao = db.holidayDao()
+    val salesMonthDao = db.salesMonthDao()
+    val bonusEventDao = db.bonusEventDao()
 
     /** Folder foto selfie: <filesDir>/photos/yyyy-MM/ */
     val photoRoot: File = File(context.filesDir, "photos")
@@ -276,6 +279,8 @@ class Repository(context: Context) {
         old.forEach { r -> r.photoPath?.let { runCatching { File(it).delete() } } }
         val deleted = attendanceDao.deleteBefore(cutoff)
         holidayDao.deleteBefore(cutoff)
+        bonusEventDao.deleteBefore(cutoff) // teguran/setengah hari ikut aturan simpan presensi; penjualan bulanan tetap
+
         // Folder foto per bulan yang sudah kosong / lebih lama dari batas ikut dibuang.
         photoRoot.listFiles()?.forEach { dir ->
             if (dir.isDirectory && dir.name < cutoff.take(7)) dir.deleteRecursively()
@@ -297,6 +302,9 @@ class Repository(context: Context) {
         attendance = attendanceDao.getAll(),
         holidays = holidayDao.getAll(),
         settings = settingsStore.current(),
+        salesMonths = salesMonthDao.getAll(),
+        bonusEvents = bonusEventDao.getAll(),
+        salesConfig = settingsStore.salesBonusConfig.first(),
     )
 
     @Suppress("DEPRECATION")
@@ -346,6 +354,8 @@ class Repository(context: Context) {
         val tooOld: Int,
         val settingsApplied: Boolean,
         val unmatched: Int = 0,
+        val salesMonths: Int = 0,
+        val bonusEvents: Int = 0,
     )
 
     /**
@@ -358,7 +368,10 @@ class Repository(context: Context) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             val data = BackupCodec.decode(text) // IllegalArgumentException diteruskan ke pemanggil
             val result = db.withTransaction { restoreLocked(data, applySettings, today) }
-            if (applySettings) settingsStore.save(data.settings) // PIN owner tidak disentuh
+            if (applySettings) {
+                settingsStore.save(data.settings) // PIN owner tidak disentuh
+                data.salesConfig?.let { settingsStore.saveSalesBonusConfig(it) }
+            }
             backupSoon()
             result
         }
@@ -402,8 +415,202 @@ class Repository(context: Context) {
             holidays++
         }
 
-        return RestoreResult(imported, duplicates, employeesAdded, holidays, tooOld, applySettings, unmatched)
+        // Bonus penjualan: id karyawan di cadangan diterjemahkan lewat nama, seperti presensi.
+        fun currentIdOf(backupId: Long): Long? = backupNameById[backupId]?.let { currentByName[it] }?.id
+        var salesMonths = 0
+        for (m in data.salesMonths) {
+            val excluded = m.excludedEmployeeIds.split(',').mapNotNull { it.trim().toLongOrNull() }
+                .mapNotNull { currentIdOf(it) }.joinToString(",")
+            if (salesMonthDao.insertIgnore(m.copy(excludedEmployeeIds = excluded)) != -1L) salesMonths++
+        }
+        var bonusEvents = 0
+        for (e in data.bonusEvents) {
+            val id = currentIdOf(e.employeeId) ?: continue
+            if (e.date < cutoff) continue
+            if (bonusEventDao.insertIgnore(e.copy(id = 0, employeeId = id)) != -1L) bonusEvents++
+        }
+
+        return RestoreResult(imported, duplicates, employeesAdded, holidays, tooOld, applySettings, unmatched, salesMonths, bonusEvents)
     }
+
+    // ---------- Bonus penjualan toko ----------
+
+    /**
+     * Semua yang dibutuhkan layar bonus penjualan untuk bulan [ym].
+     * [result] dihitung langsung dari data sekarang, kecuali bulan yang sudah ditandai dibayar: angkanya dari
+     * [SalesMonth.snapshot] (dikunci). [attendanceDeleted] = presensi bulan itu sudah terhapus oleh pembersihan data
+     * lama dan bulan itu belum dikunci, jadi hitungan langsung tidak bisa dipercaya.
+     */
+    data class SalesBonusState(
+        val ym: YearMonth,
+        val config: com.indohpl.presensi.domain.SalesBonusConfig,
+        val month: SalesMonth?,
+        val result: com.indohpl.presensi.domain.SalesBonusResult,
+        val events: List<BonusEvent>,
+        val employees: List<Employee>,
+        val paid: Boolean,
+        val attendanceDeleted: Boolean,
+    ) {
+        val excludedIds: Set<Long> get() = parseIds(month?.excludedEmployeeIds.orEmpty())
+        val applies: Boolean get() = config.appliesTo(ym)
+        /** Bulan sudah lewat seluruhnya (hasil akhir). */
+        val monthFinished: Boolean get() = LocalDate.now().isAfter(ym.atEndOfMonth())
+    }
+
+    fun observeSalesBonus(ym: YearMonth): Flow<SalesBonusState> {
+        val from = ym.atDay(1).toString()
+        val to = ym.atEndOfMonth().toString()
+        val base = kotlinx.coroutines.flow.combine(
+            salesMonthDao.observe(ym.toString()),
+            bonusEventDao.observeBetween(from, to),
+            observeEmployees(),
+            observeMonth(ym),
+        ) { month, events, employees, records -> SalesInputs(month, events, employees, records) }
+        return kotlinx.coroutines.flow.combine(
+            base,
+            settingsStore.settings,
+            observeHolidays(),
+            settingsStore.salesBonusConfig,
+        ) { inp, settings, holidays, config ->
+            salesBonusState(ym, inp, settings, holidays, config, LocalDate.now())
+        }
+    }
+
+    suspend fun salesBonusState(ym: YearMonth): SalesBonusState =
+        observeSalesBonus(ym).first()
+
+    private data class SalesInputs(
+        val month: SalesMonth?,
+        val events: List<BonusEvent>,
+        val employees: List<Employee>,
+        val records: List<AttendanceRecord>,
+    )
+
+    private fun salesBonusState(
+        ym: YearMonth,
+        inp: SalesInputs,
+        settings: AppSettings,
+        holidays: List<Holiday>,
+        config: com.indohpl.presensi.domain.SalesBonusConfig,
+        today: LocalDate,
+    ): SalesBonusState {
+        val active = inp.employees.filter { it.active }
+        val month = inp.month
+        val excluded = parseIds(month?.excludedEmployeeIds.orEmpty())
+        val net = month?.let { com.indohpl.presensi.domain.SalesBonus.netSales(it.grossSales, it.excludedSales) } ?: 0L
+        val live = com.indohpl.presensi.domain.SalesBonus.calculate(
+            ym = ym,
+            today = today,
+            netSales = net,
+            config = config,
+            employees = active,
+            excludedIds = excluded,
+            records = inp.records,
+            events = inp.events,
+            workDayOfWeeks = settings.workDays,
+            holidays = holidays.mapNotNull { runCatching { LocalDate.parse(it.date) }.getOrNull() }.toSet(),
+        )
+        val paid = month?.paidAt != null
+        val frozen = if (paid) SalesSnapshot.decode(month!!.snapshot) else null
+        val cutoff = Retention.cutoffDate(today, settings.retentionMonths)
+        return SalesBonusState(
+            ym = ym,
+            config = config,
+            month = month,
+            result = frozen ?: live,
+            events = inp.events,
+            employees = active,
+            paid = paid,
+            attendanceDeleted = !paid && ym.atEndOfMonth().isBefore(cutoff),
+        )
+    }
+
+    /**
+     * Simpan penjualan bulan [ym] (dari laporan Toqoo). Peserta dan status dibayar tidak berubah.
+     * false bila bulan itu sudah ditandai dibayar (dikunci).
+     */
+    suspend fun saveSales(ym: YearMonth, grossSales: Long, excludedSales: Long, asOf: LocalDate, note: String): Boolean {
+        val existing = salesMonthDao.get(ym.toString())
+        if (existing?.paidAt != null) return false
+        val now = System.currentTimeMillis()
+        salesMonthDao.upsert(
+            (existing ?: emptySalesMonth(ym, now)).copy(
+                grossSales = grossSales.coerceAtLeast(0L),
+                excludedSales = excludedSales.coerceAtLeast(0L),
+                asOfDate = asOf.toString(),
+                note = note.trim(),
+                updatedAt = now,
+            ),
+        )
+        backupSoon()
+        return true
+    }
+
+    /** Ikut / tidak ikut bonus bulan [ym] (mis. keluar sebelum akhir bulan, atau belum bulan penuh pertama). */
+    suspend fun setSalesParticipant(ym: YearMonth, employeeId: Long, participating: Boolean): Boolean {
+        val now = System.currentTimeMillis()
+        val existing = salesMonthDao.get(ym.toString()) ?: emptySalesMonth(ym, now)
+        if (existing.paidAt != null) return false
+        val ids = parseIds(existing.excludedEmployeeIds).let { if (participating) it - employeeId else it + employeeId }
+        salesMonthDao.upsert(existing.copy(excludedEmployeeIds = ids.sorted().joinToString(","), updatedAt = now))
+        backupSoon()
+        return true
+    }
+
+    /** Catat teguran / setengah hari. false bila bulan itu sudah dikunci. */
+    suspend fun addBonusEvent(employeeId: Long, date: LocalDate, type: String, note: String, byWhom: String): Boolean {
+        if (salesMonthDao.get(YearMonth.from(date).toString())?.paidAt != null) return false
+        bonusEventDao.insert(
+            BonusEvent(
+                employeeId = employeeId,
+                date = date.toString(),
+                type = type,
+                note = note.trim(),
+                byWhom = byWhom.trim(),
+                createdAt = System.currentTimeMillis(),
+            ),
+        )
+        backupSoon()
+        return true
+    }
+
+    suspend fun deleteBonusEvent(event: BonusEvent): Boolean {
+        val ym = runCatching { YearMonth.from(LocalDate.parse(event.date)) }.getOrNull()
+        if (ym != null && salesMonthDao.get(ym.toString())?.paidAt != null) return false
+        bonusEventDao.delete(event)
+        backupSoon()
+        return true
+    }
+
+    /**
+     * Tandai bonus bulan [ym] sudah dibayar: hasil saat ini dikunci (tidak berubah lagi). Hanya setelah bulan selesai,
+     * dan hanya bila penjualan sudah diisi. false bila tidak bisa.
+     */
+    suspend fun markSalesPaid(ym: YearMonth): Boolean {
+        if (!LocalDate.now().isAfter(ym.atEndOfMonth())) return false
+        val state = salesBonusState(ym)
+        val month = state.month ?: return false
+        if (state.paid || state.attendanceDeleted) return false
+        salesMonthDao.upsert(
+            month.copy(paidAt = System.currentTimeMillis(), snapshot = SalesSnapshot.encode(state.result), updatedAt = System.currentTimeMillis()),
+        )
+        backupSoon()
+        return true
+    }
+
+    /** Buka lagi bulan yang sudah ditandai dibayar (hasil dihitung ulang dari data sekarang). */
+    suspend fun reopenSales(ym: YearMonth): Boolean {
+        val month = salesMonthDao.get(ym.toString()) ?: return false
+        if (month.paidAt == null) return false
+        salesMonthDao.upsert(month.copy(paidAt = null, snapshot = "", updatedAt = System.currentTimeMillis()))
+        backupSoon()
+        return true
+    }
+
+    private fun emptySalesMonth(ym: YearMonth, now: Long) = SalesMonth(
+        ym = ym.toString(), grossSales = 0L, excludedSales = 0L, asOfDate = "", note = "",
+        excludedEmployeeIds = "", paidAt = null, snapshot = "", updatedAt = now,
+    )
 
     // ---------- Pemeriksaan (Inspector) ----------
 
@@ -466,3 +673,6 @@ class Repository(context: Context) {
         count to bytes
     }
 }
+
+/** "1,3,5" -> {1, 3, 5}; teks rusak diabaikan. */
+internal fun parseIds(text: String): Set<Long> = text.split(',').mapNotNull { it.trim().toLongOrNull() }.toSet()
