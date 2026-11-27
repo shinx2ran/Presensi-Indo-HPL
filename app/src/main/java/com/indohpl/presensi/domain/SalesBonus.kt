@@ -246,10 +246,23 @@ object SalesBonus {
 
     private fun formatMinutes(m: Int): String = if (m % 60 == 0) "${m / 60} jam" else "${m / 60} jam ${m % 60} mnt"
 
-    /** Ambil angka rupiah dari teks isian ("612.500.000", "Rp 612,500,000") -> 612500000; null bila kosong/terlalu besar. */
+    /**
+     * Angka rupiah dari teks isian, hanya digit: "Rp 612.500.000" -> "612500000". Sen di belakang (",00" / ".00",
+     * 1-2 digit setelah pemisah terakhir) dibuang dulu, supaya angka yang ditempel dari laporan
+     * ("612.500.000,00") tidak menjadi 100 kali lipat. Paling banyak 15 digit.
+     */
+    fun rupiahDigits(text: String): String {
+        val t = text.trim()
+        val sep = t.lastIndexOfAny(charArrayOf(',', '.'))
+        val tail = if (sep >= 0) t.substring(sep + 1) else ""
+        val whole = if (sep >= 0 && tail.length in 1..2 && tail.all { it.isDigit() }) t.substring(0, sep) else t
+        return whole.filter { it.isDigit() }.take(15)
+    }
+
+    /** Ambil angka rupiah dari teks isian (lihat [rupiahDigits]); null bila kosong. */
     fun parseRupiah(text: String): Long? {
-        val digits = text.filter { it.isDigit() }
-        if (digits.isEmpty() || digits.length > 15) return null
+        val digits = rupiahDigits(text)
+        if (digits.isEmpty()) return null
         return digits.toLong()
     }
 

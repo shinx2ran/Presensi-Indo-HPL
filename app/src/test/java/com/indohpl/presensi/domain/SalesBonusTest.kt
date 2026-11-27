@@ -283,7 +283,14 @@ class SalesBonusTest {
         assertEquals("Rp1.100.000", SalesBonus.rp(1_100_000L))
         assertEquals(612_500_000L, SalesBonus.parseRupiah("Rp 612.500.000"))
         assertNull(SalesBonus.parseRupiah("  "))
-        assertNull(SalesBonus.parseRupiah("9999999999999999"))
+        assertEquals(999_999_999_999_999L, SalesBonus.parseRupiah("9999999999999999")) // dipotong 15 digit
+        // Angka ditempel dari laporan: sen dibuang, tidak jadi 100x.
+        assertEquals(612_500_000L, SalesBonus.parseRupiah("Rp 612.500.000,00"))
+        assertEquals(612_500_000L, SalesBonus.parseRupiah("612,500,000.00"))
+        assertEquals(612_500_000L, SalesBonus.parseRupiah("612.500.000,5"))
+        assertEquals(1_250L, SalesBonus.parseRupiah("1.250"))   // 3 digit setelah titik = ribuan
+        assertEquals("612500000", SalesBonus.rupiahDigits("612.500.000,00"))
+        assertEquals("", SalesBonus.rupiahDigits("Rp"))
     }
 
     @Test

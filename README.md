@@ -104,6 +104,24 @@ Untuk hari ketika karyawan sebenarnya datang tepat waktu tetapi belum bisa absen
 * **Batalkan anulir** mengembalikan catatan menjadi telat dengan menit aslinya.
 * Hari libur atau di luar hari kerja tidak menambah saldo, dianulir atau tidak.
 
+## Bonus penjualan toko (mulai 1 Desember 2026)
+
+Tambahan di luar gaji dan uang rajin Rp 350.000 (yang tetap sama). Owner mengisi penjualan, aplikasi menghitung.
+
+| Penjualan sebulan (Toqoo, tanpa proyek CE LENY) | Bonus per orang |
+|---|---|
+| 600 juta | Rp 500.000 |
+| 650 juta | Rp 700.000 |
+| 700 juta | Rp 900.000 |
+| 750 juta | Rp 1.100.000 |
+
+* **Uang bonus** = bonus per orang x jumlah peserta, lalu dibagi menurut bagian: masuk terus = 1, tidak masuk sampai 1 hari = ¾, sampai 2 hari = ¼, lebih dari 2 hari = 0. Bagian yang berkurang otomatis jatuh ke teman yang lain. Contoh 650 juta (Rp 3.500.000), 1 orang tidak masuk 1 hari: 4 orang Rp 736.842, dia Rp 552.632.
+* **Tidak masuk** dihitung otomatis dari presensi: bolos, izin, sakit = 1 hari (tidak ada jatah izin); telat lebih dari 2 jam = ½ hari (telat yang dianulir tidak dihitung). "Setengah hari / pulang cepat" dicatat owner (aplikasi tidak punya absen pulang).
+* **Teguran** (hanya Akong/Koko) dicatat owner dengan tanggal; teguran ke-2 dalam sebulan = tidak dapat bonus.
+* **Pengaturan (owner) → Bonus penjualan**: isi penjualan Toqoo dan proyek CE LENY, pilih "data sampai tanggal" (10, 20, 25, hari ini, akhir bulan), centang peserta, catat teguran/setengah hari, **Salin pengumuman WA** (hanya angka tim), dan **Tandai sudah dibayar** setelah bulan selesai dan angka akhir bulan diisi (hasil dikunci, bisa dibuka lagi). Target dan bulan mulai bisa diubah di "Atur target & bonus per orang".
+* **Tab Saldo (karyawan)**: penjualan tim, target tercapai, kurang berapa lagi, dan status kehadiran tiap orang untuk bonus. Teguran dan jumlah bonus per orang tidak ditampilkan di HP bersama.
+* Ikut tercadangkan, dan rekap Markdown untuk Claude mendapat bagian "Bonus penjualan".
+
 ## Pembersihan otomatis (self-regulating)
 
 Aplikasi mandiri, tanpa server. Supaya HP tidak penuh dan data lama tidak menumpuk, aplikasi **menghapus sendiri** catatan presensi beserta fotonya yang lebih lama dari batas simpan (bawaan **2 bulan**: bulan berjalan + 2 bulan sebelumnya disimpan, lebih lama dihapus).

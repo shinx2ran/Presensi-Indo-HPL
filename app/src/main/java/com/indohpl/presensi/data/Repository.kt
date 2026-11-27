@@ -455,6 +455,10 @@ class Repository(context: Context) {
         val applies: Boolean get() = config.appliesTo(ym)
         /** Bulan sudah lewat seluruhnya (hasil akhir). */
         val monthFinished: Boolean get() = LocalDate.now().isAfter(ym.atEndOfMonth())
+        /** Penjualan yang diisi sampai tanggal (null bila belum diisi). */
+        val salesAsOf: LocalDate? get() = month?.asOfDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        /** Penjualan sudah diisi sampai akhir bulan: baru boleh jadi hasil akhir / ditandai dibayar. */
+        val salesComplete: Boolean get() = salesAsOf?.let { !it.isBefore(ym.atEndOfMonth()) } ?: false
     }
 
     fun observeSalesBonus(ym: YearMonth): Flow<SalesBonusState> {
@@ -590,7 +594,7 @@ class Repository(context: Context) {
         if (!LocalDate.now().isAfter(ym.atEndOfMonth())) return false
         val state = salesBonusState(ym)
         val month = state.month ?: return false
-        if (state.paid || state.attendanceDeleted) return false
+        if (state.paid || state.attendanceDeleted || !state.salesComplete) return false
         salesMonthDao.upsert(
             month.copy(paidAt = System.currentTimeMillis(), snapshot = SalesSnapshot.encode(state.result), updatedAt = System.currentTimeMillis()),
         )

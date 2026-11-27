@@ -183,6 +183,10 @@ private fun SettingsContent(repository: Repository, onMessage: (String) -> Unit)
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
+            SalesBonusSection(repository, onMessage)
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
             InspectorSection(repository, onMessage)
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))

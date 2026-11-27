@@ -95,6 +95,9 @@ fun RecapScreen(repository: Repository) {
             config = settings.bonusConfig(),
         )
     }
+    val bonusState = remember(month) { repository.observeSalesBonus(month) }
+        .collectAsStateWithLifecycle<Repository.SalesBonusState?>(null).value
+        ?.takeIf { it.ym == month } // nilai bulan sebelumnya bisa tertinggal sebentar saat pindah bulan
     val isCurrentMonth = month == YearMonth.from(today)
     var photoToShow by remember { mutableStateOf<Pair<String, String>?>(null) }
 
@@ -122,6 +125,9 @@ fun RecapScreen(repository: Repository) {
                         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Bulan berikutnya")
                     }
                 }
+            }
+            bonusState?.takeIf { it.applies }?.let { sb ->
+                item(key = "sales-bonus") { SalesBonusCard(sb) }
             }
             item {
                 val first = recaps.firstOrNull()
@@ -183,6 +189,7 @@ fun RecapScreen(repository: Repository) {
                     records = records.filter { it.employeeId == r.employee.id }.sortedByDescending { it.date },
                     isCurrentMonth = isCurrentMonth,
                     today = today,
+                    bonusState = bonusState,
                     onShowPhoto = { path, title -> photoToShow = path to title },
                 )
             }
@@ -252,6 +259,7 @@ private fun SaldoCard(
     records: List<AttendanceRecord>,
     isCurrentMonth: Boolean,
     today: LocalDate,
+    bonusState: Repository.SalesBonusState?,
     onShowPhoto: (String, String) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -339,6 +347,7 @@ private fun SaldoCard(
                     color = Green,
                 )
             }
+            SalesBonusStatusLine(bonusState, recap.employee.id, Modifier.padding(top = 8.dp))
             if (recap.bestStreak >= 2) {
                 Spacer(Modifier.height(4.dp))
                 Text(
